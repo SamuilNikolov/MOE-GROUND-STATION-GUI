@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live GPS and Velocity Tracker</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <style>
+        body {
+            display: flex;
+            background-color: black;
+            color: white;
+            font-family: Arial, sans-serif;
+            margin: 0;
+        }
+        #map { 
+            width: 90%; 
+            height: 100vh; 
+        }
+        #velocity {
+            width: 10%;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: black;
+            color: white;
+            position: relative;
+        }
+        .velocity-bar {
+            width: 10%;
+            height: 80%;
+            background-color: #333;
+            position: relative;
+            border: 2px solid white;
+        }
+        .rocket {
+            width: 100%;
+            height: 0;
+            background-color: white;
+            position: absolute;
+            bottom: 0;
+        }
+        .tick-label {
+            color: white;
+            font-size: 6px;
+            text-align: center;
+            position: absolute;
+            left: 105%;
+            margin-left: 10px;
+        }
+        .velocity-display {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 1em;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div id="velocity">
+        <!-- Velocity bar and velocity display -->
+        <div class="velocity-bar" id="velocity-bar">
+            <div class="rocket" id="rocket"></div>
+        </div>
+        <div class="velocity-display" id="velocity-display">Velocity: 0 km/h</div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const maxVelocity = 16; // Set max velocity dynamically
+        const interval = 2; // Tick interval in km/h
+
+        // Generate dynamic tick marks and labels
+        function createTicks() {
+            const velocityBar = document.getElementById('velocity-bar');
+            const numTicks = Math.floor(maxVelocity / interval);
+
+            // Clear existing ticks
+            velocityBar.querySelectorAll('.tick-label').forEach(tick => tick.remove());
+
+            // Create ticks
+            for (let i = 0; i <= numTicks; i++) {
+                const position = (i / numTicks) * 100;
+                const label = document.createElement('div');
+                label.className = 'tick-label';
+                label.style.bottom = `${position}%`;
+                label.innerText = `${i * interval} km/h`;
+                velocityBar.appendChild(label);
+            }
+        }
+
+        createTicks(); // Initialize ticks on load
+
+        // GPS Map Visualization
+        const map = L.map('map').setView([29.210815, -81.022835], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19
+        }).addTo(map);
+
+        const marker = L.marker([29.210815, -81.022835]).addTo(map);
+        const socket = io();
+        
+        const rocket = document.getElementById('rocket');
+        const velocityDisplay = document.getElementById('velocity-display');
+
+        socket.on('gpsData', (data) => {
+            const { lat, lon, velocity } = data;
+            marker.setLatLng([lat, lon]);
+            map.panTo([lat, lon]);
+            updateVelocity(velocity);
+        });
+
+        function updateVelocity(velocity) {
+            const normalizedVelocity = Math.min(velocity / maxVelocity, 1);
+            rocket.style.height = `${normalizedVelocity * 100}%`; // Fill based on velocity
+            
+            // Update velocity display
+            velocityDisplay.innerText = `Velocity: ${velocity} km/h`;
+            velocityDisplay.style.fontSize='10px';
+            
+            // Highlight passed tick labels in bright green
+            document.querySelectorAll('.tick-label').forEach(label => {
+                const labelVelocity = parseInt(label.innerText);
+                label.style.color = velocity >= labelVelocity ? 'lime' : 'white';
+            });
+        }
+    </script>
+</body>
+</html>
