@@ -9,7 +9,7 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const logFilePath = path.join(__dirname, 'gps_data.csv');
-
+app.use(express.static(path.join(__dirname)));// Serve static files from the directory
 // Ensure the log file exists and has a header
 if (!fs.existsSync(logFilePath)) {
     fs.writeFileSync(logFilePath, 'Timestamp,Latitude,Longitude,Velocity,Altitude\n');
