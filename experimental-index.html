@@ -67,6 +67,11 @@
 </head>
 <body>
     <div id="map"></div>
+    <div id="gps-info">
+        <h3>GPS Coordinates</h3>
+        <p id="latitude">Latitude: 0.00000</p>
+        <p id="longitude">Longitude: 0.00000</p>
+    </div>
     <div id="bars-container">
         <!-- Velocity Bar -->
         <div class="bar-container">
@@ -135,6 +140,8 @@
             console.log(lon);
             updateVelocity(velocity);
             updateAltitude(altitude);
+            document.getElementById('latitude').innerText = `Latitude: ${lat.toFixed(5)}`;
+        document.getElementById('longitude').innerText = `Longitude: ${lon.toFixed(5)}`;
         });
 
         function updateVelocity(velocity) {
