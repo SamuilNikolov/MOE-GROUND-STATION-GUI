@@ -55,3 +55,18 @@ body {
     font-size: 1em;
     color: white;
 }
+        #acc-container {
+            width: 99%;
+            height: 20%;
+            background-color: black;
+            position: relative;
+            border: 2px solid white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #acc-container canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }

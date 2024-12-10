@@ -24,15 +24,21 @@
             </div>
             <div class="bar-display" id="altitude-display">Altitude: 0 m</div>
         </div>
+
+        <!-- Acceleration Chart -->
+        <div id="acc-container">
+            <canvas id="accChart"></canvas>
+        </div>
     </div>
 
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         const maxVelocity = 100; // Set max velocity dynamically
-        const maxAltitude = 20; // Set max altitude dynamically
+        const maxAltitude = 20;  // Set max altitude dynamically
         const velocityInterval = 10; // Tick interval for velocity
-        const altitudeInterval = 2; // Tick interval for altitude
+        const altitudeInterval = 2;  // Tick interval for altitude
 
         // Generate dynamic tick marks and labels
         function createTicks(barId, maxValue, interval) {
@@ -56,10 +62,11 @@
         createTicks('velocity-bar', maxVelocity, velocityInterval);
         createTicks('altitude-bar', maxAltitude, altitudeInterval);
 
-        // GPS Map Visualization
+        // Initialize the map
         const map = L.map('map').setView([29.210815, -81.022835], 13);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19
+        L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+            maxZoom: 17,
+            attribution: 'Map data © OpenStreetMap contributors, SRTM | Render © OpenTopoMap (CC-BY-SA)'
         }).addTo(map);
 
         const marker = L.marker([29.210815, -81.022835]).addTo(map);
@@ -69,24 +76,107 @@
         const velocityDisplay = document.getElementById('velocity-display');
         const altitudeDisplay = document.getElementById('altitude-display');
 
+        // Setup Chart.js for acceleration
+        const ctx = document.getElementById('accChart').getContext('2d');
+        const maxPoints = 50; // Keep the most recent 50 points
+        let sampleCount = 0;
+
+        const accChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'X Acc (Horizontal)',
+                        data: [],
+                        borderColor: 'red',
+                        borderWidth: 1,
+                        fill: false,
+                        tension: 0
+                    },
+                    {
+                        label: 'Y Acc (Horizontal)',
+                        data: [],
+                        borderColor: 'green',
+                        borderWidth: 1,
+                        fill: false,
+                        tension: 0
+                    },
+                    {
+                        label: 'Z Acc (Vertical)',
+                        data: [],
+                        borderColor: 'blue',
+                        borderWidth: 1,
+                        fill: false,
+                        tension: 0
+                    }
+                ]
+            },
+            options: {
+                responsive: false,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        display: false // Just show recent points, no need for x-axis labels
+                    },
+                    y: {
+                        min: -1,
+                        max: 1,
+                        title: {
+                            display: true,
+                            text: 'Acceleration (g)'
+                        }
+                    }
+                },
+                animation: false
+            }
+        });
+
         socket.on('gpsData', (data) => {
-            const { lat, lon, velocity, altitude } = data;
-            marker.setLatLng([lat, lon]);
-            map.panTo([lat, lon]);
-            console.log(lat.toFixed(2));
-            console.log(lon);
-            updateVelocity(velocity);
-            updateAltitude(altitude);
+            const { lat, lon, velocity, altitude, xAcc, yAcc, zAcc } = data;
+
+            // Update map position if available
+            if (typeof lat !== 'undefined' && typeof lon !== 'undefined') {
+                marker.setLatLng([lat, lon]);
+                map.panTo([lat, lon]);
+            }
+
+            // Update velocity if available
+            if (typeof velocity !== 'undefined') {
+                updateVelocity(velocity);
+            }
+
+            // Update altitude if available
+            if (typeof altitude !== 'undefined') {
+                updateAltitude(altitude);
+            }
+
+            // Update acceleration chart if all axes are available
+            if (typeof xAcc !== 'undefined' && typeof yAcc !== 'undefined' && typeof zAcc !== 'undefined') {
+                sampleCount++;
+
+                // Assuming xAcc, yAcc, zAcc are already in g.
+                // If not, you'd convert them here before pushing.
+                accChart.data.labels.push(sampleCount);
+                accChart.data.datasets[0].data.push(xAcc);
+                accChart.data.datasets[1].data.push(yAcc);
+                accChart.data.datasets[2].data.push(zAcc);
+
+                // Remove oldest data if over 50 points
+                while (accChart.data.labels.length > maxPoints) {
+                    accChart.data.labels.shift();
+                    accChart.data.datasets.forEach(ds => ds.data.shift());
+                }
+
+                accChart.update();
+            }
         });
 
         function updateVelocity(velocity) {
             const normalizedVelocity = Math.min(velocity / maxVelocity, 1);
-            rocket.style.height = `${normalizedVelocity * 100}%`; // Fill based on velocity
-            
-            // Update velocity display
+            rocket.style.height = `${normalizedVelocity * 100}%`;
             velocityDisplay.innerText = `Velocity: ${velocity} km/h`;
-            
-            // Highlight passed tick labels in bright green
+
             document.querySelectorAll('#velocity-bar .tick-label').forEach(label => {
                 const labelVelocity = parseInt(label.innerText);
                 label.style.color = velocity >= labelVelocity ? 'lime' : 'white';
@@ -95,11 +185,9 @@
 
         function updateAltitude(altitude) {
             const normalizedAltitude = Math.min(altitude / maxAltitude, 1);
-            altitudeFill.style.height = `${normalizedAltitude * 100}%`; // Fill based on altitude
-            // Update altitude display
+            altitudeFill.style.height = `${normalizedAltitude * 100}%`;
             altitudeDisplay.innerText = `Altitude: ${altitude} m`;
-            
-            // Highlight passed tick labels in bright green
+
             document.querySelectorAll('#altitude-bar .tick-label').forEach(label => {
                 const labelAltitude = parseInt(label.innerText);
                 label.style.color = altitude >= labelAltitude ? 'lime' : 'white';
