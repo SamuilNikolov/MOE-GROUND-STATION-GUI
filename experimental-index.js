@@ -7,7 +7,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Serve the simulated index.html and CSS
+// Serve index.html and CSS
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
@@ -17,11 +17,10 @@ app.get('/shared.css', (req, res) => {
     res.sendFile(path.join(__dirname, 'shared.css'));
 });
 
-// Instead of reading from a serial port, we simulate data:
+// Function for random float and int
 function getRandomFloat(min, max) {
     return Math.random() * (max - min) + min;
 }
-
 function getRandomInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
@@ -30,20 +29,38 @@ function getRandomInt(min, max) {
 let baseLat = 29.210815;
 let baseLon = -81.022835;
 
-// Simulate data generation at 1 Hz
+// Altitude simulation variables
+let altitude = 0;
+let ascending = true; // start by ascending
+const ALT_STEP = 10; // increment altitude by 10m per second
+const MAX_ALT = 1000; // max altitude
+
 setInterval(() => {
-    // Create simulated data
-    const latitude = baseLat + getRandomFloat(-0.01, 0.01);
-    const longitude = baseLon + getRandomFloat(-0.01, 0.01);
-    const velocity = getRandomInt(0, 100);     // km/h
-    const altitude = getRandomInt(0, 20);      // meters
-    const xAcc = getRandomFloat(-1, 1);        // g units
-    const yAcc = getRandomFloat(-1, 1);        // g units
-    const zAcc = getRandomFloat(-1, 1);        // g units
-    const temperature = getRandomInt(15, 35);  // Celsius
-    const pitch = getRandomFloat(-45, 45);     // degrees
-    const yaw = getRandomFloat(-180, 180);     // degrees
-    const roll = getRandomFloat(-45, 45);      // degrees
+    // Update altitude
+    if (ascending) {
+        altitude += ALT_STEP;
+        if (altitude >= MAX_ALT) {
+            altitude = MAX_ALT;
+            ascending = false;
+        }
+    } else {
+        altitude -= ALT_STEP;
+        if (altitude <= 0) {
+            altitude = 0;
+            ascending = true; // start ascending again after hitting ground
+        }
+    }
+
+    const latitude = baseLat + getRandomFloat(-0.001, 0.001);
+    const longitude = baseLon + getRandomFloat(-0.001, 0.001);
+    const velocity = getRandomInt(10, 50);   // km/h, just a random range
+    const xAcc = getRandomFloat(-1, 1);      
+    const yAcc = getRandomFloat(-1, 1);      
+    const zAcc = getRandomFloat(-1, 1);      
+    const temperature = getRandomInt(15, 35);
+    const pitch = getRandomFloat(-45, 45);
+    const yaw = getRandomFloat(-180, 180);
+    const roll = getRandomFloat(-45, 45);
 
     const data = {
         lat: latitude,
@@ -60,8 +77,8 @@ setInterval(() => {
     };
 
     io.emit('gpsData', data);
-    console.log(`Simulated Data: Lat: ${latitude}, Lon: ${longitude}, Vel: ${velocity}, Alt: ${altitude}, X: ${xAcc}, Y: ${yAcc}, Z: ${zAcc}, Temp: ${temperature}, Pitch: ${pitch}, Yaw: ${yaw}, Roll: ${roll}`);
-}, 100);
+    console.log(`Simulated Data: Alt: ${altitude}, Ascending: ${ascending}`);
+}, 1000); // 1 Hz updates
 
 io.on('connection', (socket) => {
     console.log('Client connected (simulation)');

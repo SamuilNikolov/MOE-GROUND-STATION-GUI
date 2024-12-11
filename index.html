@@ -40,6 +40,8 @@
         <div id="acc-container">
             <canvas id="accChart"></canvas>
         </div>
+        <button id="enable-voice-btn">Enable Voice</button>
+
     </div>
 
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -47,16 +49,41 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         const maxVelocity = 100;
-        const maxAltitude = 20;
-        const maxTemperature = 50; // Let's assume a max temperature range of 50°C
+        const maxAltitude = 1000;
+        const maxTemperature = 50;
         const velocityInterval = 10;
-        const altitudeInterval = 2;
-        const temperatureInterval = 5; // Ticks every 5°C
-        const maxPoints = 50; // Keep recent points for acceleration
-        const maxCoords = 50; // Keep recent coords for polyline
+        const altitudeInterval = 100; // every 100m milestone
+        const temperatureInterval = 5;
+        const maxPoints = 50;
+        const maxCoords = 50;
         let sampleCount = 0;
 
-        // Dynamic ticks for each bar
+        // Track altitude milestones and apogee
+        let lastMilestoneAnnounced = 0;
+        let altitudeHistory = [];
+        let apogeeAnnounced = false; // announce only once
+
+        // Control speech
+        let speechEnabled = false;
+        let selectedVoice = null;
+
+        document.getElementById('enable-voice-btn').addEventListener('click', () => {
+            speechEnabled = true;
+            console.log('Voice enabled by user.');
+            // Resume audio context for beep
+            audioCtx.resume();
+        });
+
+        // Try to select a less robotic voice
+        window.speechSynthesis.onvoiceschanged = () => {
+            const voices = window.speechSynthesis.getVoices();
+            // Try to pick an English female voice (commonly more natural)
+            selectedVoice = voices.find(v => 
+                v.lang.toLowerCase().includes('en') && v.name.toLowerCase().includes('female')
+            ) || voices.find(v => v.lang.toLowerCase().includes('en')) || null;
+        };
+
+        // Create ticks
         function createTicks(barId, maxValue, interval) {
             const bar = document.getElementById(barId);
             const numTicks = Math.floor(maxValue / interval);
@@ -76,7 +103,6 @@
         createTicks('altitude-bar', maxAltitude, altitudeInterval);
         createTicks('temperature-bar', maxTemperature, temperatureInterval);
 
-        // Initialize map
         const map = L.map('map').setView([29.210815, -81.022835], 13);
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             maxZoom: 21,
@@ -90,12 +116,9 @@
         const altitudeFill = document.getElementById('altitude-fill');
         const velocityDisplay = document.getElementById('velocity-display');
         const altitudeDisplay = document.getElementById('altitude-display');
-
-        // Temperature elements
         const temperatureFill = document.getElementById('temperature-fill');
         const temperatureDisplay = document.getElementById('temperature-display');
 
-        // Chart setup for acceleration
         const ctx = document.getElementById('accChart').getContext('2d');
         const accChart = new Chart(ctx, {
             type: 'line',
@@ -122,31 +145,56 @@
             }
         });
 
-        // Keep recent coords for polyline
         const recentCoordinates = [];
         const polyline = L.polyline([], { color: 'red' }).addTo(map);
+
+        // Setup Web Audio API for beep
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function beep(duration = 100, frequency = 880, volume = 1, type = 'sine') {
+            if (!speechEnabled) return; // Only beep if user enabled voice (to ensure user interaction)
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            oscillator.type = type;
+            oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime);
+            gainNode.gain.setValueAtTime(volume, audioCtx.currentTime);
+
+            oscillator.start();
+            setTimeout(() => {
+                oscillator.stop();
+            }, duration);
+        }
 
         socket.on('gpsData', (data) => {
             const { lat, lon, velocity, altitude, xAcc, yAcc, zAcc, temperature } = data;
 
-            // Update map and polyline
-            if (typeof lat !== 'undefined' && typeof lon !== 'undefined') {
+            if (lat !== undefined && lon !== undefined) {
                 marker.setLatLng([lat, lon]);
                 map.panTo([lat, lon]);
-
                 recentCoordinates.push([lat, lon]);
                 if (recentCoordinates.length > maxCoords) recentCoordinates.shift();
                 polyline.setLatLngs(recentCoordinates);
             }
 
-            // Update bars and chart
-            if (typeof velocity !== 'undefined') updateVelocity(velocity);
-            if (typeof altitude !== 'undefined') updateAltitude(altitude);
-            if (typeof temperature !== 'undefined') updateTemperature(temperature);
+            if (velocity !== undefined) updateVelocity(velocity);
+            if (altitude !== undefined) {
+                updateAltitude(altitude);
+                checkMilestonesAndApogee(altitude);
+            }
+            if (temperature !== undefined) updateTemperature(temperature);
 
-            if (typeof xAcc !== 'undefined' && typeof yAcc !== 'undefined' && typeof zAcc !== 'undefined') {
+            if (xAcc !== undefined && yAcc !== undefined && zAcc !== undefined) {
                 sampleCount++;
                 updateAccelerationChart(xAcc, yAcc, zAcc);
+
+                // Every 10 telemetry points, beep
+                if (sampleCount % 10 === 0) {
+                    beep(100, 440, 0.5, 'sine');
+                }
             }
         });
 
@@ -194,6 +242,45 @@
                 accChart.data.datasets.forEach(ds => ds.data.shift());
             }
             accChart.update();
+        }
+
+        function speakMessage(message) {
+            if (!speechEnabled) return; 
+            const utter = new SpeechSynthesisUtterance(message);
+            // Try to use a chosen voice, pitch, and rate for a less robotic sound
+            if (selectedVoice) utter.voice = selectedVoice;
+            utter.pitch = 1.2; // slightly higher pitch
+            utter.rate = 0.9;  // slightly slower to sound more natural
+            window.speechSynthesis.speak(utter);
+        }
+
+        function checkMilestonesAndApogee(currentAltitude) {
+            altitudeHistory.push(currentAltitude);
+            if (altitudeHistory.length > 10) {
+                altitudeHistory.shift(); // keep last 10 readings
+            }
+
+            // Check for 100m milestones
+            const currentMilestone = Math.floor(currentAltitude / 100) * 100;
+            if (currentMilestone > 0 && currentMilestone % 100 === 0 && currentMilestone !== lastMilestoneAnnounced) {
+                speakMessage(`Reached ${currentMilestone} meters`);
+                lastMilestoneAnnounced = currentMilestone;
+            }
+
+            // Check apogee if last 10 readings are strictly decreasing
+            if (!apogeeAnnounced && altitudeHistory.length === 10) {
+                let decreasing = true;
+                for (let i = 0; i < altitudeHistory.length - 1; i++) {
+                    if (altitudeHistory[i] <= altitudeHistory[i + 1]) {
+                        decreasing = false;
+                        break;
+                    }
+                }
+                if (decreasing) {
+                    speakMessage("Apogee reached. The rocket is now descending.");
+                    apogeeAnnounced = true;
+                }
+            }
         }
     </script>
 </body>
