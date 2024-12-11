@@ -4,18 +4,35 @@ body {
     color: white;
     font-family: Arial, sans-serif;
     margin: 0;
+    box-sizing: border-box;
 }
-#map { 
-    width: 80%; 
-    height: 100vh; 
+
+/* Map takes 75% of width, full height */
+#map {
+    width: 75%;
+    height: 100vh;
 }
+
+/* Bars and charts take 25% of width */
 #bars-container {
-    width: 20%;
+    width: 25%;
     height: 100vh;
     display: flex;
     flex-direction: column;
     background-color: black;
+    box-sizing: border-box;
+    padding: 10px;
 }
+
+/* The top section with two bars side by side (70% height) */
+#bars-row {
+    display: flex;
+    width: 100%;
+    height: 70%;
+    box-sizing: border-box;
+}
+
+/* Each bar container */
 .bar-container {
     flex: 1;
     display: flex;
@@ -23,22 +40,29 @@ body {
     align-items: center;
     justify-content: center;
     position: relative;
-    border-bottom: 1px solid white;
+    margin: 0 5px;
+    box-sizing: border-box;
+    border: 1px solid white;
 }
-.velocity-bar, .altitude-bar {
-    width: 60%;
-    height: 80%;
+
+/* Bars themselves, easily adjustable width/height inside container */
+.velocity-bar, .altitude-bar, .temperature-bar {
+    width: 50%; 
+    height: 80%; 
     background-color: #333;
     position: relative;
     border: 2px solid white;
 }
-.rocket, .altitude-fill {
+
+/* Fill elements */
+.rocket, .altitude-fill, .temperature-fill {
     width: 100%;
     height: 0;
     background-color: white;
     position: absolute;
     bottom: 0;
 }
+
 .tick-label {
     color: white;
     font-size: 6px;
@@ -47,6 +71,7 @@ body {
     left: 105%;
     margin-left: 10px;
 }
+
 .bar-display {
     position: absolute;
     top: 10px;
@@ -55,18 +80,22 @@ body {
     font-size: 1em;
     color: white;
 }
-        #acc-container {
-            width: 99%;
-            height: 20%;
-            background-color: black;
-            position: relative;
-            border: 2px solid white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
 
-        #acc-container canvas {
-            width: 100% !important;
-            height: 100% !important;
-        }
+/* Acceleration chart container (30% height) */
+#acc-container {
+    width: 100%;
+    height: 30%;
+    background-color: black;
+    position: relative;
+    border: 2px solid white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    margin-top: 5px;
+}
+
+#acc-container canvas {
+    width: 100% !important;
+    height: 100% !important;
+}

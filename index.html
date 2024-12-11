@@ -3,26 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live GPS, Velocity, and Altitude Tracker</title>
+    <title>Live GPS, Velocity, Altitude, and Temperature Tracker</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <link rel="stylesheet" href="./shared.css">
 </head>
 <body>
     <div id="map"></div>
     <div id="bars-container">
-        <!-- Velocity Bar -->
-        <div class="bar-container">
-            <div class="velocity-bar" id="velocity-bar">
-                <div class="rocket" id="rocket"></div>
+        <div id="bars-row">
+            <!-- Velocity Bar -->
+            <div class="bar-container">
+                <div class="velocity-bar" id="velocity-bar">
+                    <div class="rocket" id="rocket"></div>
+                </div>
+                <div class="bar-display" id="velocity-display">Velocity: 0 km/h</div>
             </div>
-            <div class="bar-display" id="velocity-display">Velocity: 0 km/h</div>
-        </div>
-        <!-- Altitude Bar -->
-        <div class="bar-container">
-            <div class="altitude-bar" id="altitude-bar">
-                <div class="altitude-fill" id="altitude-fill"></div>
+
+            <!-- Altitude Bar -->
+            <div class="bar-container">
+                <div class="altitude-bar" id="altitude-bar">
+                    <div class="altitude-fill" id="altitude-fill"></div>
+                </div>
+                <div class="bar-display" id="altitude-display">Altitude: 0 m</div>
             </div>
-            <div class="bar-display" id="altitude-display">Altitude: 0 m</div>
+            
+            <!-- Temperature Bar -->
+            <div class="bar-container">
+                <div class="temperature-bar" id="temperature-bar">
+                    <div class="temperature-fill" id="temperature-fill"></div>
+                </div>
+                <div class="bar-display" id="temperature-display">Temp: 0 °C</div>
+            </div>
         </div>
 
         <!-- Acceleration Chart -->
@@ -35,20 +46,22 @@
     <script src="/socket.io/socket.io.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
-        const maxVelocity = 100; // Set max velocity dynamically
-        const maxAltitude = 20;  // Set max altitude dynamically
-        const velocityInterval = 10; // Tick interval for velocity
-        const altitudeInterval = 2;  // Tick interval for altitude
+        const maxVelocity = 100;
+        const maxAltitude = 20;
+        const maxTemperature = 50; // Let's assume a max temperature range of 50°C
+        const velocityInterval = 10;
+        const altitudeInterval = 2;
+        const temperatureInterval = 5; // Ticks every 5°C
+        const maxPoints = 50; // Keep recent points for acceleration
+        const maxCoords = 50; // Keep recent coords for polyline
+        let sampleCount = 0;
 
-        // Generate dynamic tick marks and labels
+        // Dynamic ticks for each bar
         function createTicks(barId, maxValue, interval) {
             const bar = document.getElementById(barId);
             const numTicks = Math.floor(maxValue / interval);
-
-            // Clear existing ticks
             bar.querySelectorAll('.tick-label').forEach(tick => tick.remove());
 
-            // Create ticks
             for (let i = 0; i <= numTicks; i++) {
                 const position = (i / numTicks) * 100;
                 const label = document.createElement('div');
@@ -61,12 +74,14 @@
 
         createTicks('velocity-bar', maxVelocity, velocityInterval);
         createTicks('altitude-bar', maxAltitude, altitudeInterval);
+        createTicks('temperature-bar', maxTemperature, temperatureInterval);
 
-        // Initialize the map
+        // Initialize map
         const map = L.map('map').setView([29.210815, -81.022835], 13);
-        L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
-            maxZoom: 17,
-            attribution: 'Map data © OpenStreetMap contributors, SRTM | Render © OpenTopoMap (CC-BY-SA)'
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 21,
+            attribution: 'Tiles © Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, ' +
+                         'GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
         }).addTo(map);
 
         const marker = L.marker([29.210815, -81.022835]).addTo(map);
@@ -76,99 +91,62 @@
         const velocityDisplay = document.getElementById('velocity-display');
         const altitudeDisplay = document.getElementById('altitude-display');
 
-        // Setup Chart.js for acceleration
-        const ctx = document.getElementById('accChart').getContext('2d');
-        const maxPoints = 50; // Keep the most recent 50 points
-        let sampleCount = 0;
+        // Temperature elements
+        const temperatureFill = document.getElementById('temperature-fill');
+        const temperatureDisplay = document.getElementById('temperature-display');
 
+        // Chart setup for acceleration
+        const ctx = document.getElementById('accChart').getContext('2d');
         const accChart = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: [],
                 datasets: [
-                    {
-                        label: 'X Acc (Horizontal)',
-                        data: [],
-                        borderColor: 'red',
-                        borderWidth: 1,
-                        fill: false,
-                        tension: 0
-                    },
-                    {
-                        label: 'Y Acc (Horizontal)',
-                        data: [],
-                        borderColor: 'green',
-                        borderWidth: 1,
-                        fill: false,
-                        tension: 0
-                    },
-                    {
-                        label: 'Z Acc (Vertical)',
-                        data: [],
-                        borderColor: 'blue',
-                        borderWidth: 1,
-                        fill: false,
-                        tension: 0
-                    }
+                    { label: 'X Acc (Horizontal)', data: [], borderColor: 'red',   borderWidth: 1, fill: false, tension: 0 },
+                    { label: 'Y Acc (Horizontal)', data: [], borderColor: 'green', borderWidth: 1, fill: false, tension: 0 },
+                    { label: 'Z Acc (Vertical)',   data: [], borderColor: 'blue',  borderWidth: 1, fill: false, tension: 0 }
                 ]
             },
             options: {
                 responsive: false,
                 maintainAspectRatio: false,
                 scales: {
-                    x: {
-                        display: false // Just show recent points, no need for x-axis labels
-                    },
+                    x: { display: false },
                     y: {
                         min: -1,
                         max: 1,
-                        title: {
-                            display: true,
-                            text: 'Acceleration (g)'
-                        }
+                        title: { display: true, text: 'Acceleration (g)' }
                     }
                 },
                 animation: false
             }
         });
 
-        socket.on('gpsData', (data) => {
-            const { lat, lon, velocity, altitude, xAcc, yAcc, zAcc } = data;
+        // Keep recent coords for polyline
+        const recentCoordinates = [];
+        const polyline = L.polyline([], { color: 'red' }).addTo(map);
 
-            // Update map position if available
+        socket.on('gpsData', (data) => {
+            const { lat, lon, velocity, altitude, xAcc, yAcc, zAcc, temperature } = data;
+
+            // Update map and polyline
             if (typeof lat !== 'undefined' && typeof lon !== 'undefined') {
                 marker.setLatLng([lat, lon]);
                 map.panTo([lat, lon]);
+
+                recentCoordinates.push([lat, lon]);
+                if (recentCoordinates.length > maxCoords) recentCoordinates.shift();
+                polyline.setLatLngs(recentCoordinates);
             }
 
-            // Update velocity if available
-            if (typeof velocity !== 'undefined') {
-                updateVelocity(velocity);
-            }
+            // Update bars and chart
+            if (typeof velocity !== 'undefined') updateVelocity(velocity);
+            if (typeof altitude !== 'undefined') updateAltitude(altitude);
+            if (typeof temperature !== 'undefined') updateTemperature(temperature);
 
-            // Update altitude if available
-            if (typeof altitude !== 'undefined') {
-                updateAltitude(altitude);
-            }
-
-            // Update acceleration chart if all axes are available
             if (typeof xAcc !== 'undefined' && typeof yAcc !== 'undefined' && typeof zAcc !== 'undefined') {
                 sampleCount++;
-
-                // Assuming xAcc, yAcc, zAcc are already in g.
-                // If not, you'd convert them here before pushing.
-                accChart.data.labels.push(sampleCount);
-                accChart.data.datasets[0].data.push(xAcc);
-                accChart.data.datasets[1].data.push(yAcc);
-                accChart.data.datasets[2].data.push(zAcc);
-
-                // Remove oldest data if over 50 points
-                while (accChart.data.labels.length > maxPoints) {
-                    accChart.data.labels.shift();
-                    accChart.data.datasets.forEach(ds => ds.data.shift());
-                }
-
-                accChart.update();
+                updateAccelerationChart(xAcc, yAcc, zAcc);
             }
         });
 
@@ -178,7 +156,7 @@
             velocityDisplay.innerText = `Velocity: ${velocity} km/h`;
 
             document.querySelectorAll('#velocity-bar .tick-label').forEach(label => {
-                const labelVelocity = parseInt(label.innerText);
+                const labelVelocity = parseInt(label.innerText, 10);
                 label.style.color = velocity >= labelVelocity ? 'lime' : 'white';
             });
         }
@@ -189,9 +167,33 @@
             altitudeDisplay.innerText = `Altitude: ${altitude} m`;
 
             document.querySelectorAll('#altitude-bar .tick-label').forEach(label => {
-                const labelAltitude = parseInt(label.innerText);
+                const labelAltitude = parseInt(label.innerText, 10);
                 label.style.color = altitude >= labelAltitude ? 'lime' : 'white';
             });
+        }
+
+        function updateTemperature(temp) {
+            const normalizedTemp = Math.min(temp / maxTemperature, 1);
+            temperatureFill.style.height = `${normalizedTemp * 100}%`;
+            temperatureDisplay.innerText = `Temp: ${temp} °C`;
+
+            document.querySelectorAll('#temperature-bar .tick-label').forEach(label => {
+                const labelTemp = parseInt(label.innerText, 10);
+                label.style.color = temp >= labelTemp ? 'lime' : 'white';
+            });
+        }
+
+        function updateAccelerationChart(xAcc, yAcc, zAcc) {
+            accChart.data.labels.push(sampleCount);
+            accChart.data.datasets[0].data.push(xAcc);
+            accChart.data.datasets[1].data.push(yAcc);
+            accChart.data.datasets[2].data.push(zAcc);
+
+            while (accChart.data.labels.length > maxPoints) {
+                accChart.data.labels.shift();
+                accChart.data.datasets.forEach(ds => ds.data.shift());
+            }
+            accChart.update();
         }
     </script>
 </body>
