@@ -33,7 +33,7 @@ let baseLon = -81.022835;
 let altitude = 0;
 let ascending = true; // start by ascending
 const ALT_STEP = 10; // increment altitude by 10m per second
-const MAX_ALT = 1000; // max altitude
+const MAX_ALT = 3000; // max altitude
 
 setInterval(() => {
     // Update altitude
@@ -78,7 +78,7 @@ setInterval(() => {
 
     io.emit('gpsData', data);
     console.log(`Simulated Data: Alt: ${altitude}, Ascending: ${ascending}`);
-}, 1000); // 1 Hz updates
+}, 200); // 1 Hz updates
 
 io.on('connection', (socket) => {
     console.log('Client connected (simulation)');

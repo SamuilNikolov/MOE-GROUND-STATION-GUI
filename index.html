@@ -1,94 +1,130 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- Specify the document type and set the language to English. -->
     <meta charset="UTF-8">
+    <!-- Ensure the page is responsive and fits the device width -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Set the title of the page -->
     <title>Live GPS, Velocity, Altitude, and Temperature Tracker</title>
+    <!-- Include Leaflet CSS for map styling -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <!-- Include custom shared CSS -->
     <link rel="stylesheet" href="./shared.css">
 </head>
 <body>
+    <!-- A container div for the map -->
     <div id="map"></div>
+    
+    <!-- A container for various bars and the chart -->
     <div id="bars-container">
+        <!-- A row to hold multiple bars side by side -->
         <div id="bars-row">
-            <!-- Velocity Bar -->
+            <!-- Velocity bar container -->
             <div class="bar-container">
+                <!-- Velocity bar background -->
                 <div class="velocity-bar" id="velocity-bar">
+                    <!-- A div representing the "rocket" inside the velocity bar to show current velocity visually -->
                     <div class="rocket" id="rocket"></div>
                 </div>
+                <!-- Display text for current velocity -->
                 <div class="bar-display" id="velocity-display">Velocity: 0 km/h</div>
             </div>
 
-            <!-- Altitude Bar -->
+            <!-- Altitude bar container -->
             <div class="bar-container">
+                <!-- Altitude bar background -->
                 <div class="altitude-bar" id="altitude-bar">
+                    <!-- A fill element showing the current altitude level -->
                     <div class="altitude-fill" id="altitude-fill"></div>
                 </div>
+                <!-- Display text for current altitude -->
                 <div class="bar-display" id="altitude-display">Altitude: 0 m</div>
             </div>
             
-            <!-- Temperature Bar -->
+            <!-- Temperature bar container -->
             <div class="bar-container">
+                <!-- Temperature bar background -->
                 <div class="temperature-bar" id="temperature-bar">
+                    <!-- A fill element showing the current temperature level -->
                     <div class="temperature-fill" id="temperature-fill"></div>
                 </div>
+                <!-- Display text for current temperature -->
                 <div class="bar-display" id="temperature-display">Temp: 0 °C</div>
             </div>
         </div>
 
-        <!-- Acceleration Chart -->
+        <!-- A container for the acceleration chart -->
         <div id="acc-container">
+            <!-- Canvas element for Chart.js acceleration data -->
             <canvas id="accChart"></canvas>
         </div>
+        
+        <!-- A button to enable voice/speech features -->
         <button id="enable-voice-btn">Enable Voice</button>
 
     </div>
 
+    <!-- Include Leaflet JavaScript for the map -->
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <!-- Include Socket.IO for real-time communication -->
     <script src="/socket.io/socket.io.js"></script>
+    <!-- Include Chart.js for plotting acceleration data -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
-        const maxVelocity = 100;
-        const maxAltitude = 1000;
-        const maxTemperature = 50;
-        const velocityInterval = 10;
-        const altitudeInterval = 100; // every 100m milestone
-        const temperatureInterval = 5;
-        const maxPoints = 50;
-        const maxCoords = 50;
+        // Maximum representable velocities, altitudes, temperatures, etc.
+        const maxVelocity = 100;        // Maximum velocity scale for velocity bar
+        const maxAltitude = 3000;       // Maximum altitude scale for altitude bar
+        const maxTemperature = 50;      // Maximum temperature scale for temperature bar
+        
+        // Intervals for the tick marks on the bars
+        const velocityInterval = 10;    // Tick every 10 km/h on velocity bar
+        const altitudeInterval = 100;   // Tick every 100 m on altitude bar
+        const temperatureInterval = 5;  // Tick every 5 °C on temperature bar
+
+        // Maximum data points for acceleration chart and recent coordinates
+        const maxPoints = 50;           // Keep last 50 points in the acceleration chart
+        const maxCoords = 50;           // Keep last 50 GPS coordinates for the drawn path
+
+        // Counter for incoming data samples
         let sampleCount = 0;
 
-        // Track altitude milestones and apogee
-        let lastMilestoneAnnounced = 0;
-        let altitudeHistory = [];
-        let apogeeAnnounced = false; // announce only once
+        // Arrays and flags for altitude-related logic
+        let altitudeHistory = [];       // Store recent altitude data points
+        let apogeeAnnounced = false;    // Whether apogee has been announced
+        let lastAltitude = 0;           // The altitude from the previous data update
+        let maxAltitudeReached = 0;     // Highest altitude reached before descent
+        const apogeeDetectionCount = 10;// Number of data points indicating descent required to confirm apogee
 
-        // Control speech
-        let speechEnabled = false;
-        let selectedVoice = null;
+        // Speech-related variables
+        let speechEnabled = false;      // Flag to know if speech is enabled by user
+        let selectedVoice = null;       // The chosen voice for speech synthesis
 
+        // Add event listener on the "Enable Voice" button to allow speech and resume audio context
         document.getElementById('enable-voice-btn').addEventListener('click', () => {
             speechEnabled = true;
             console.log('Voice enabled by user.');
-            // Resume audio context for beep
             audioCtx.resume();
         });
 
-        // Try to select a less robotic voice
+        // Onvoiceschanged event fires when the list of speech synthesis voices is updated
         window.speechSynthesis.onvoiceschanged = () => {
             const voices = window.speechSynthesis.getVoices();
-            // Try to pick an English female voice (commonly more natural)
+            // Attempt to find a female English voice, else fallback to any English voice
             selectedVoice = voices.find(v => 
                 v.lang.toLowerCase().includes('en') && v.name.toLowerCase().includes('female')
             ) || voices.find(v => v.lang.toLowerCase().includes('en')) || null;
         };
 
-        // Create ticks
+        // Function to create tick marks and labels along a bar
         function createTicks(barId, maxValue, interval) {
             const bar = document.getElementById(barId);
             const numTicks = Math.floor(maxValue / interval);
+
+            // Remove existing tick labels if any
             bar.querySelectorAll('.tick-label').forEach(tick => tick.remove());
 
+            // Create and position each tick label
             for (let i = 0; i <= numTicks; i++) {
                 const position = (i / numTicks) * 100;
                 const label = document.createElement('div');
@@ -99,19 +135,28 @@
             }
         }
 
+        // Create ticks for each bar (velocity, altitude, temperature)
         createTicks('velocity-bar', maxVelocity, velocityInterval);
         createTicks('altitude-bar', maxAltitude, altitudeInterval);
         createTicks('temperature-bar', maxTemperature, temperatureInterval);
 
+        // Initialize a Leaflet map centered at given coordinates with a zoom level of 13
         const map = L.map('map').setView([29.210815, -81.022835], 13);
+
+        // Add a tile layer (satellite imagery) to the map
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             maxZoom: 21,
             attribution: 'Tiles © Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, ' +
                          'GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
         }).addTo(map);
 
+        // Add a marker to show the current position on the map
         const marker = L.marker([29.210815, -81.022835]).addTo(map);
+
+        // Connect to the server with Socket.IO for real-time data
         const socket = io();
+
+        // Get references to certain DOM elements for updating
         const rocket = document.getElementById('rocket');
         const altitudeFill = document.getElementById('altitude-fill');
         const velocityDisplay = document.getElementById('velocity-display');
@@ -119,6 +164,7 @@
         const temperatureFill = document.getElementById('temperature-fill');
         const temperatureDisplay = document.getElementById('temperature-display');
 
+        // Initialize Chart.js for acceleration data plotting
         const ctx = document.getElementById('accChart').getContext('2d');
         const accChart = new Chart(ctx, {
             type: 'line',
@@ -134,10 +180,10 @@
                 responsive: false,
                 maintainAspectRatio: false,
                 scales: {
-                    x: { display: false },
+                    x: { display: false }, // no need to display X-axis labels
                     y: {
-                        min: -1,
-                        max: 1,
+                        min: -10,
+                        max: 10,
                         title: { display: true, text: 'Acceleration (g)' }
                     }
                 },
@@ -145,14 +191,18 @@
             }
         });
 
+        // Store recent GPS coordinates for drawing a path
         const recentCoordinates = [];
+
+        // Create a polyline (red line) to show the recent path
         const polyline = L.polyline([], { color: 'red' }).addTo(map);
 
-        // Setup Web Audio API for beep
+        // Create an audio context for generating beep sounds
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
+        // Function to play a short beep sound when triggered
         function beep(duration = 100, frequency = 880, volume = 1, type = 'sine') {
-            if (!speechEnabled) return; // Only beep if user enabled voice (to ensure user interaction)
+            if (!speechEnabled) return; 
             const oscillator = audioCtx.createOscillator();
             const gainNode = audioCtx.createGain();
 
@@ -169,74 +219,90 @@
             }, duration);
         }
 
+        // Listen for 'gpsData' events from the server containing telemetry
         socket.on('gpsData', (data) => {
             const { lat, lon, velocity, altitude, xAcc, yAcc, zAcc, temperature } = data;
 
+            // Update map position and polyline if coordinates are available
             if (lat !== undefined && lon !== undefined) {
                 marker.setLatLng([lat, lon]);
                 map.panTo([lat, lon]);
                 recentCoordinates.push([lat, lon]);
+                // If we have more than maxCoords points, remove the oldest
                 if (recentCoordinates.length > maxCoords) recentCoordinates.shift();
                 polyline.setLatLngs(recentCoordinates);
             }
 
+            // Update velocity bar and display if available
             if (velocity !== undefined) updateVelocity(velocity);
+            // Update altitude bar, display and check for milestones/apogee if available
             if (altitude !== undefined) {
                 updateAltitude(altitude);
-                checkMilestonesAndApogee(altitude);
+                checkMilestonesAndApogee(altitude, lastAltitude);
+                lastAltitude = altitude;
             }
+            // Update temperature bar and display if available
             if (temperature !== undefined) updateTemperature(temperature);
 
+            // Update acceleration chart if acceleration data are available
             if (xAcc !== undefined && yAcc !== undefined && zAcc !== undefined) {
                 sampleCount++;
                 updateAccelerationChart(xAcc, yAcc, zAcc);
 
-                // Every 10 telemetry points, beep
-                if (sampleCount % 10 === 0) {
+                // Every 10 telemetry points, play a beep
+                if (sampleCount % 2 === 0) {
                     beep(100, 440, 0.5, 'sine');
                 }
             }
         });
 
+        // Update the velocity bar and text display
         function updateVelocity(velocity) {
             const normalizedVelocity = Math.min(velocity / maxVelocity, 1);
             rocket.style.height = `${normalizedVelocity * 100}%`;
             velocityDisplay.innerText = `Velocity: ${velocity} km/h`;
 
+            // Update tick label colors based on current velocity
             document.querySelectorAll('#velocity-bar .tick-label').forEach(label => {
                 const labelVelocity = parseInt(label.innerText, 10);
                 label.style.color = velocity >= labelVelocity ? 'lime' : 'white';
             });
         }
 
+        // Update the altitude bar and text display
         function updateAltitude(altitude) {
             const normalizedAltitude = Math.min(altitude / maxAltitude, 1);
             altitudeFill.style.height = `${normalizedAltitude * 100}%`;
-            altitudeDisplay.innerText = `Altitude: ${altitude} m`;
+            altitudeDisplay.innerText = `Altitude: ${Math.round(altitude)} m`;
 
+            // Update tick label colors based on current altitude
             document.querySelectorAll('#altitude-bar .tick-label').forEach(label => {
                 const labelAltitude = parseInt(label.innerText, 10);
                 label.style.color = altitude >= labelAltitude ? 'lime' : 'white';
             });
         }
 
+        // Update the temperature bar and text display
         function updateTemperature(temp) {
             const normalizedTemp = Math.min(temp / maxTemperature, 1);
             temperatureFill.style.height = `${normalizedTemp * 100}%`;
             temperatureDisplay.innerText = `Temp: ${temp} °C`;
 
+            // Update tick label colors based on current temperature
             document.querySelectorAll('#temperature-bar .tick-label').forEach(label => {
                 const labelTemp = parseInt(label.innerText, 10);
                 label.style.color = temp >= labelTemp ? 'lime' : 'white';
             });
         }
 
+        // Update the acceleration chart with new acceleration data
         function updateAccelerationChart(xAcc, yAcc, zAcc) {
             accChart.data.labels.push(sampleCount);
             accChart.data.datasets[0].data.push(xAcc);
             accChart.data.datasets[1].data.push(yAcc);
             accChart.data.datasets[2].data.push(zAcc);
 
+            // If too many points, remove oldest
             while (accChart.data.labels.length > maxPoints) {
                 accChart.data.labels.shift();
                 accChart.data.datasets.forEach(ds => ds.data.shift());
@@ -244,31 +310,43 @@
             accChart.update();
         }
 
+        // Speak a given message if speech is enabled
         function speakMessage(message) {
             if (!speechEnabled) return; 
             const utter = new SpeechSynthesisUtterance(message);
-            // Try to use a chosen voice, pitch, and rate for a less robotic sound
             if (selectedVoice) utter.voice = selectedVoice;
-            utter.pitch = 1.2; // slightly higher pitch
-            utter.rate = 0.9;  // slightly slower to sound more natural
+            utter.pitch = 1;
+            utter.rate = 1.1;
             window.speechSynthesis.speak(utter);
         }
 
-        function checkMilestonesAndApogee(currentAltitude) {
+        // Check for altitude milestones and apogee
+        function checkMilestonesAndApogee(currentAltitude, previousAltitude) {
+            // Add current altitude to the history
             altitudeHistory.push(currentAltitude);
-            if (altitudeHistory.length > 10) {
-                altitudeHistory.shift(); // keep last 10 readings
+            if (altitudeHistory.length > apogeeDetectionCount) {
+                altitudeHistory.shift(); 
             }
 
-            // Check for 100m milestones
-            const currentMilestone = Math.floor(currentAltitude / 100) * 100;
-            if (currentMilestone > 0 && currentMilestone % 100 === 0 && currentMilestone !== lastMilestoneAnnounced) {
+            // Determine if we are ascending or descending
+            const direction = (currentAltitude > previousAltitude) ? 'ascending' : 'descending';
+
+            // If ascending and current altitude is greater than any previously recorded max, update maxAltitudeReached
+            if (direction === 'ascending' && currentAltitude > maxAltitudeReached) {
+                maxAltitudeReached = currentAltitude;
+            }
+
+            // Determine milestones for every 100m
+            const currentMilestone = Math.floor(currentAltitude / 300) * 300;
+            const previousMilestone = Math.floor(previousAltitude / 300) * 300;
+
+            // If ascending and we cross into a higher 100m band, announce that milestone
+            if (direction === 'ascending' && currentMilestone > previousMilestone && currentMilestone > 0) {
                 speakMessage(`Reached ${currentMilestone} meters`);
-                lastMilestoneAnnounced = currentMilestone;
             }
 
-            // Check apogee if last 10 readings are strictly decreasing
-            if (!apogeeAnnounced && altitudeHistory.length === 10) {
+            // Check if last apogeeDetectionCount readings are strictly decreasing to confirm apogee
+            if (!apogeeAnnounced && altitudeHistory.length === apogeeDetectionCount) {
                 let decreasing = true;
                 for (let i = 0; i < altitudeHistory.length - 1; i++) {
                     if (altitudeHistory[i] <= altitudeHistory[i + 1]) {
@@ -276,8 +354,10 @@
                         break;
                     }
                 }
+
+                // If decreasing, we've reached apogee. Announce max altitude reached.
                 if (decreasing) {
-                    speakMessage("Apogee reached. The rocket is now descending.");
+                    speakMessage(`Apogee reached at ${Math.round(maxAltitudeReached)} meters. The rocket is now descending.`);
                     apogeeAnnounced = true;
                 }
             }
