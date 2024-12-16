@@ -9,13 +9,13 @@ body {
 
 /* Map takes 75% of width, full height */
 #map {
-    width: 75%;
+    width: 60%;
     height: 100vh;
 }
 
 /* Bars and charts take 25% of width */
 #bars-container {
-    width: 25%;
+    width: 40%;
     height: 100vh;
     display: flex;
     flex-direction: column;
@@ -28,7 +28,7 @@ body {
 #bars-row {
     display: flex;
     width: 100%;
-    height: 70%;
+    height: 60%;
     box-sizing: border-box;
 }
 
@@ -43,6 +43,31 @@ body {
     margin: 0 5px;
     box-sizing: border-box;
     border: 1px solid white;
+}
+
+/* For the "gyro" container itself, let's make it flex:2 so it's bigger 
+   than others in that horizontal row. You can adjust flex:2 to any ratio. */
+   .bar-container.gyro {
+    flex: 2; /* takes more space horizontally than flex:1 containers */
+    display: flex;
+    flex-direction: column;  /* so children can stack vertically */
+}
+
+/* .gyro-inner should fill the container completely. */
+.bar-container.gyro .gyro-inner {
+    flex: 1;            /* fill remaining vertical space in .bar-container.gyro */
+    width: 100%;
+    display: flex;      /* so the canvas can also expand */
+    position: relative;
+    border: 2px solid white;
+    background-color: #333;
+}
+
+/* Force the canvas to fill the parent's size */
+.bar-container.gyro .gyro-inner canvas {
+    width: 100%;
+    height: 100%;
+    display: block;      /* ensures no extra whitespace or unwanted overflow */
 }
 
 /* Bars themselves, easily adjustable width/height inside container */
@@ -75,8 +100,6 @@ body {
 .bar-display {
     position: absolute;
     top: 10px;
-    left: 50%;
-    transform: translateX(-50%);
     font-size: 1em;
     color: white;
 }
@@ -84,7 +107,7 @@ body {
 /* Acceleration chart container (30% height) */
 #acc-container {
     width: 100%;
-    height: 30%;
+    height: 40%;
     background-color: black;
     position: relative;
     border: 2px solid white;
