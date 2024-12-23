@@ -1,378 +1,538 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Live GPS, Velocity, Altitude, Temperature, and Orientation Tracker</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-    <link rel="stylesheet" href="./shared.css">
+  <meta charset="UTF-8">
+  <title>Live GPS, Velocity, Altitude, Temperature, and Acceleration Vectors</title>
+  <!-- Leaflet CSS for map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <!-- Shared CSS (provided) -->
+  <link rel="stylesheet" href="./shared.css">
 </head>
 <body>
-    <div id="map"></div>
-    <div id="bars-container">
-        <div id="bars-row" style="display: flex; flex-direction: row; justify-content: space-between;">
-            <!-- Velocity bar container -->
-            <div class="bar-container">
-                <div class="velocity-bar" id="velocity-bar">
-                    <div class="rocket" id="rocket"></div>
-                </div>
-                <div class="bar-display" id="velocity-display">Velocity: 0 km/h</div>
-            </div>
-            <!-- Altitude bar container -->
-            <div class="bar-container">
-                <div class="altitude-bar" id="altitude-bar">
-                    <div class="altitude-fill" id="altitude-fill"></div>
-                </div>
-                <div class="bar-display" id="altitude-display">Altitude: 0 m</div>
-            </div>
-            <!-- Temperature bar container -->
-            <div class="bar-container">
-                <div class="temperature-bar" id="temperature-bar">
-                    <div class="temperature-fill" id="temperature-fill"></div>
-                </div>
-                <div class="bar-display" id="temperature-display">Temp: 0 °C</div>
-            </div>
-            <!-- Orientation container -->
-            <div class="bar-container gyro">
-                <div class="gyro-inner">
-                    <canvas id="orientationCanvas"></canvas>
-                </div>
-                <div class="bar-display">Orientation</div>
-            </div>
-        </div>
+  <!-- Left side: Map -->
+  <div id="map"></div>
 
-        <!-- Acceleration chart -->
-        <div id="acc-container">
-            <canvas id="accChart"></canvas>
+  <!-- Right side: Telemetry bars & 3D acceleration visualization -->
+  <div id="bars-container">
+    <div id="bars-row" style="display: flex; flex-direction: row; justify-content: space-between;">
+      <!-- Velocity bar -->
+      <div class="bar-container">
+        <div class="velocity-bar" id="velocity-bar">
+          <div class="rocket" id="rocket"></div>
         </div>
-        
-        <button id="enable-voice-btn">Enable Audio</button>
+        <div class="bar-display" id="velocity-display">Velocity: 0 km/h</div>
+      </div>
+
+      <!-- Altitude bar -->
+      <div class="bar-container">
+        <div class="altitude-bar" id="altitude-bar">
+          <div class="altitude-fill" id="altitude-fill"></div>
+        </div>
+        <div class="bar-display" id="altitude-display">Altitude: 0 m</div>
+      </div>
+
+      <!-- Temperature bar -->
+      <div class="bar-container">
+        <div class="temperature-bar" id="temperature-bar">
+          <div class="temperature-fill" id="temperature-fill"></div>
+        </div>
+        <div class="bar-display" id="temperature-display">Temp: 0 °C</div>
+      </div>
+
+      <!-- Acceleration Vectors 3D visualization -->
+      <div class="bar-container gyro">
+        <div class="gyro-inner">
+          <canvas id="orientationCanvas"></canvas>
+        </div>
+        <div class="bar-display">Acceleration & Orientation</div>
+      </div>
     </div>
 
-    <!-- Scripts -->
-    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-    <script src="/socket.io/socket.io.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
-    <script>
-    /************************************************
-     *          High-Level Configuration
-     ************************************************/
-    const maxVelocity = 100;
-    const maxAltitude = 3000;
-    const maxTemperature = 50;
-    const velocityInterval = 10;
-    const altitudeInterval = 100;
-    const temperatureInterval = 5;
-    const maxPoints = 50;
-    const maxCoords = 50;
-    let sampleCount = 0;
-    let altitudeHistory = [];
-    let apogeeAnnounced = false;
-    let lastAltitude = 0;
-    let maxAltitudeReached = 0;
-    const apogeeDetectionCount = 10;
-    let speechEnabled = false;
-    let selectedVoice = null;
+    <!-- Bottom section: Acceleration Chart -->
+    <div id="acc-container">
+      <canvas id="accChart"></canvas>
+    </div>
+    
+    <!-- Button for enabling audio/voice features -->
+    <button id="enable-voice-btn">Enable Audio</button>
+  </div>
 
-    /************************************************
-     *          DOM Element References
-     ************************************************/
-    const rocket = document.getElementById('rocket');
-    const altitudeFill = document.getElementById('altitude-fill');
-    const velocityDisplay = document.getElementById('velocity-display');
-    const altitudeDisplay = document.getElementById('altitude-display');
-    const temperatureFill = document.getElementById('temperature-fill');
-    const temperatureDisplay = document.getElementById('temperature-display');
-    const voiceBtn = document.getElementById('enable-voice-btn');
+  <!-- External Scripts -->
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
 
-    /************************************************
-     *          Speech Synthesis Setup
-     ************************************************/
-    voiceBtn.addEventListener('click', () => {
-        speechEnabled = true;
-        console.log('Voice enabled by user.');
-        audioCtx.resume();
+  <script>
+  /************************************************
+   *        High-Level Config and Globals
+   ************************************************/
+  const maxVelocity         = 100;
+  const maxAltitude         = 3000;
+  const maxTemperature      = 50;
+  const velocityInterval    = 10;
+  const altitudeInterval    = 100;
+  const temperatureInterval = 5;
+  const maxPoints           = 50;  // max data points in Chart.js
+  const maxCoords           = 50;  // max GPS coords for polyline path
+  let sampleCount           = 0;
+
+  let altitudeHistory       = [];
+  let apogeeAnnounced       = false;
+  let lastAltitude          = 0;
+  let maxAltitudeReached    = 0;
+  const apogeeDetectionCount= 10;
+
+  let speechEnabled         = false;
+  let selectedVoice         = null;
+
+  /************************************************
+   *        DOM References
+   ************************************************/
+  const rocket             = document.getElementById('rocket');
+  const altitudeFill       = document.getElementById('altitude-fill');
+  const velocityDisplay    = document.getElementById('velocity-display');
+  const altitudeDisplay    = document.getElementById('altitude-display');
+  const temperatureFill    = document.getElementById('temperature-fill');
+  const temperatureDisplay = document.getElementById('temperature-display');
+  const voiceBtn           = document.getElementById('enable-voice-btn');
+
+  /************************************************
+   *        Speech Synthesis Setup
+   ************************************************/
+  voiceBtn.addEventListener('click', () => {
+    speechEnabled = true;
+    console.log('Audio/Voice enabled by user.');
+    audioCtx.resume(); // resume AudioContext if needed
+  });
+
+  window.speechSynthesis.onvoiceschanged = () => {
+    const voices = window.speechSynthesis.getVoices();
+    selectedVoice = voices.find(v => v.lang.toLowerCase().includes('en')) || null;
+  };
+
+  function speakMessage(message) {
+    if (!speechEnabled) return; 
+    const utter = new SpeechSynthesisUtterance(message);
+    if (selectedVoice) utter.voice = selectedVoice;
+    utter.pitch = 1;
+    utter.rate  = 1.1;
+    window.speechSynthesis.speak(utter);
+  }
+
+  /************************************************
+   *        Audio Beep Setup
+   ************************************************/
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  function beep(duration = 100, frequency = 880, volume = 1, type = 'sine') {
+    if (!speechEnabled) return;
+    const oscillator = audioCtx.createOscillator();
+    const gainNode   = audioCtx.createGain();
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime);
+    gainNode.gain.setValueAtTime(volume, audioCtx.currentTime);
+    oscillator.start();
+    setTimeout(() => oscillator.stop(), duration);
+  }
+
+  /************************************************
+   *        Ticks / Rulers for Bars
+   ************************************************/
+  function createTicks(barId, maxValue, interval) {
+    const bar = document.getElementById(barId);
+    const numTicks = Math.floor(maxValue / interval);
+    bar.querySelectorAll('.tick-label').forEach(tick => tick.remove());
+    for (let i = 0; i <= numTicks; i++) {
+      const position = (i / numTicks) * 100;
+      const label = document.createElement('div');
+      label.className = 'tick-label';
+      label.style.bottom = `${position}%`;
+      label.innerText = `${i * interval}`;
+      bar.appendChild(label);
+    }
+  }
+  createTicks('velocity-bar',    maxVelocity,    velocityInterval);
+  createTicks('altitude-bar',    maxAltitude,    altitudeInterval);
+  createTicks('temperature-bar', maxTemperature, temperatureInterval);
+
+  /************************************************
+   *        Leaflet Map Initialization
+   ************************************************/
+  const map = L.map('map').setView([29.210815, -81.022835], 13);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 21,
+    attribution: 'Tiles © Esri ...'
+  }).addTo(map);
+  const marker = L.marker([29.210815, -81.022835]).addTo(map);
+
+  // Polyline to trace rocket's recent GPS path
+  const recentCoordinates = [];
+  const polyline = L.polyline([], { color: 'red' }).addTo(map);
+
+  /************************************************
+   *        Socket.IO for Real-time Data
+   ************************************************/
+  const socket = io();
+  socket.on('gpsData', (data) => {
+    const { lat, lon, velocity, altitude, xAcc, yAcc, zAcc, temperature, roll, pitch, yaw } = data;
+
+    // Update map (GPS)
+    if (lat !== undefined && lon !== undefined) {
+      marker.setLatLng([lat, lon]);
+      map.panTo([lat, lon]);
+      recentCoordinates.push([lat, lon]);
+      if (recentCoordinates.length > maxCoords) recentCoordinates.shift();
+      polyline.setLatLngs(recentCoordinates);
+    }
+
+    // Update bars & milestone logic
+    if (velocity  !== undefined) updateVelocity(velocity);
+    if (altitude  !== undefined) {
+      updateAltitude(altitude);
+      checkMilestonesAndApogee(altitude, lastAltitude);
+      lastAltitude = altitude;
+    }
+    if (temperature!== undefined) updateTemperature(temperature);
+
+    // Acceleration chart & 3D arrows
+    if (xAcc !== undefined && yAcc !== undefined && zAcc !== undefined) {
+      sampleCount++;
+      updateAccelerationChart(xAcc, yAcc, zAcc);
+      updateAccelerationArrows(xAcc, yAcc, zAcc);
+      // Optional beep every 2 samples
+      if (sampleCount % 2 === 0) beep(100, 440, 0.5, 'sine');
+    }
+
+    // If the server provides roll/pitch/yaw, store them as new targets for smoothing
+    if (roll !== undefined && pitch !== undefined && yaw !== undefined) {
+      targetRoll  = roll;   // in degrees
+      targetPitch = pitch;  // in degrees
+      targetYaw   = yaw;    // in degrees
+    }
+  });
+
+  /************************************************
+   *        Bars Update Functions
+   ************************************************/
+  function updateVelocity(velocity) {
+    const normalizedVelocity = Math.min(velocity / maxVelocity, 1);
+    rocket.style.height = `${normalizedVelocity * 100}%`;
+    velocityDisplay.innerText = `Velocity: ${velocity} km/h`;
+
+    document.querySelectorAll('#velocity-bar .tick-label').forEach(label => {
+      const labelVelocity = parseInt(label.innerText, 10);
+      label.style.color = (velocity >= labelVelocity) ? 'lime' : 'white';
     });
+  }
 
-    window.speechSynthesis.onvoiceschanged = () => {
-        const voices = window.speechSynthesis.getVoices();
-        selectedVoice = voices.find(v => 
-            v.lang.toLowerCase().includes('en')
-        ) || voices.find(v => v.lang.toLowerCase().includes('en')) || null;
-    };
+  function updateAltitude(altitude) {
+    const normalizedAltitude = Math.min(altitude / maxAltitude, 1);
+    altitudeFill.style.height = `${normalizedAltitude * 100}%`;
+    altitudeDisplay.innerText = `Altitude: ${Math.round(altitude)} m`;
 
-    function speakMessage(message) {
-        if (!speechEnabled) return; 
-        const utter = new SpeechSynthesisUtterance(message);
-        if (selectedVoice) utter.voice = selectedVoice;
-        utter.pitch = 1;
-        utter.rate = 1.1;
-        window.speechSynthesis.speak(utter);
-    }
-
-    /************************************************
-     *          Audio Beep Setup
-     ************************************************/
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    function beep(duration = 100, frequency = 880, volume = 1, type = 'sine') {
-        if (!speechEnabled) return;
-        const oscillator = audioCtx.createOscillator();
-        const gainNode = audioCtx.createGain();
-        oscillator.connect(gainNode);
-        gainNode.connect(audioCtx.destination);
-        oscillator.type = type;
-        oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime);
-        gainNode.gain.setValueAtTime(volume, audioCtx.currentTime);
-        oscillator.start();
-        setTimeout(() => oscillator.stop(), duration);
-    }
-
-    /************************************************
-     *          Ticks / Rulers for Bars
-     ************************************************/
-    function createTicks(barId, maxValue, interval) {
-        const bar = document.getElementById(barId);
-        const numTicks = Math.floor(maxValue / interval);
-        bar.querySelectorAll('.tick-label').forEach(tick => tick.remove());
-        for (let i = 0; i <= numTicks; i++) {
-            const position = (i / numTicks) * 100;
-            const label = document.createElement('div');
-            label.className = 'tick-label';
-            label.style.bottom = `${position}%`;
-            label.innerText = `${i * interval}`;
-            bar.appendChild(label);
-        }
-    }
-    createTicks('velocity-bar', maxVelocity, velocityInterval);
-    createTicks('altitude-bar', maxAltitude, altitudeInterval);
-    createTicks('temperature-bar', maxTemperature, temperatureInterval);
-
-    /************************************************
-     *          Leaflet Map Initialization
-     ************************************************/
-    const map = L.map('map').setView([29.210815, -81.022835], 13);
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-        maxZoom: 21,
-        attribution: 'Tiles © Esri ...'
-    }).addTo(map);
-    const marker = L.marker([29.210815, -81.022835]).addTo(map);
-
-    /************************************************
-     *          Socket.IO for Real-time Data
-     ************************************************/
-    const socket = io();
-    const recentCoordinates = [];
-    const polyline = L.polyline([], { color: 'red' }).addTo(map);
-
-    socket.on('gpsData', (data) => {
-        const { lat, lon, velocity, altitude, xAcc, yAcc, zAcc, temperature, roll, pitch, yaw } = data;
-
-        // Map + GPS
-        if (lat !== undefined && lon !== undefined) {
-            marker.setLatLng([lat, lon]);
-            map.panTo([lat, lon]);
-            recentCoordinates.push([lat, lon]);
-            if (recentCoordinates.length > maxCoords) recentCoordinates.shift();
-            polyline.setLatLngs(recentCoordinates);
-        }
-        if (velocity !== undefined) updateVelocity(velocity);
-        if (altitude !== undefined) {
-            updateAltitude(altitude);
-            checkMilestonesAndApogee(altitude, lastAltitude);
-            lastAltitude = altitude;
-        }
-        if (temperature !== undefined) updateTemperature(temperature);
-
-        // Acceleration chart
-        if (xAcc !== undefined && yAcc !== undefined && zAcc !== undefined) {
-            sampleCount++;
-            updateAccelerationChart(xAcc, yAcc, zAcc);
-            if (sampleCount % 2 === 0) beep(100, 440, 0.5, 'sine');
-        }
-
-        // Update 3D orientation with server-provided roll, pitch, yaw
-        if (roll !== undefined && pitch !== undefined && yaw !== undefined) {
-            updateOrientation(roll, pitch, yaw);
-        }
+    document.querySelectorAll('#altitude-bar .tick-label').forEach(label => {
+      const labelAltitude = parseInt(label.innerText, 10);
+      label.style.color = (altitude >= labelAltitude) ? 'lime' : 'white';
     });
+  }
 
-    /************************************************
-     *          Bars Update Functions
-     ************************************************/
-    function updateVelocity(velocity) {
-        const normalizedVelocity = Math.min(velocity / maxVelocity, 1);
-        rocket.style.height = `${normalizedVelocity * 100}%`;
-        velocityDisplay.innerText = `Velocity: ${velocity} km/h`;
-        document.querySelectorAll('#velocity-bar .tick-label').forEach(label => {
-            const labelVelocity = parseInt(label.innerText, 10);
-            label.style.color = velocity >= labelVelocity ? 'lime' : 'white';
-        });
-    }
+  function updateTemperature(temp) {
+    const normalizedTemp = Math.min(temp / maxTemperature, 1);
+    temperatureFill.style.height = `${normalizedTemp * 100}%`;
+    temperatureDisplay.innerText = `Temp: ${temp} °C`;
 
-    function updateAltitude(altitude) {
-        const normalizedAltitude = Math.min(altitude / maxAltitude, 1);
-        altitudeFill.style.height = `${normalizedAltitude * 100}%`;
-        altitudeDisplay.innerText = `Altitude: ${Math.round(altitude)} m`;
-        document.querySelectorAll('#altitude-bar .tick-label').forEach(label => {
-            const labelAltitude = parseInt(label.innerText, 10);
-            label.style.color = altitude >= labelAltitude ? 'lime' : 'white';
-        });
-    }
-
-    function updateTemperature(temp) {
-        const normalizedTemp = Math.min(temp / maxTemperature, 1);
-        temperatureFill.style.height = `${normalizedTemp * 100}%`;
-        temperatureDisplay.innerText = `Temp: ${temp} °C`;
-        document.querySelectorAll('#temperature-bar .tick-label').forEach(label => {
-            const labelTemp = parseInt(label.innerText, 10);
-            label.style.color = temp >= labelTemp ? 'lime' : 'white';
-        });
-    }
-
-    /************************************************
-     *          Acceleration Chart
-     ************************************************/
-    const ctx = document.getElementById('accChart').getContext('2d');
-    const accChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: [],
-            datasets: [
-                { label: 'X Acc (Horizontal)', data: [], borderColor: 'red',   borderWidth: 1, fill: false, tension: 0 },
-                { label: 'Y Acc (Horizontal)', data: [], borderColor: 'green', borderWidth: 1, fill: false, tension: 0 },
-                { label: 'Z Acc (Vertical)',   data: [], borderColor: 'blue',  borderWidth: 1, fill: false, tension: 0 }
-            ]
-        },
-        options: {
-            responsive: false,
-            maintainAspectRatio: false,
-            scales: {
-                x: { display: false },
-                y: {
-                    min: -10,
-                    max: 10,
-                    title: { display: true, text: 'Acceleration (g)' }
-                }
-            },
-            animation: false
-        }
+    document.querySelectorAll('#temperature-bar .tick-label').forEach(label => {
+      const labelTemp = parseInt(label.innerText, 10);
+      label.style.color = (temp >= labelTemp) ? 'lime' : 'white';
     });
+  }
 
-    function updateAccelerationChart(xAcc, yAcc, zAcc) {
-        accChart.data.labels.push(sampleCount);
-        accChart.data.datasets[0].data.push(xAcc);
-        accChart.data.datasets[1].data.push(yAcc);
-        accChart.data.datasets[2].data.push(zAcc);
-        while (accChart.data.labels.length > maxPoints) {
-            accChart.data.labels.shift();
-            accChart.data.datasets.forEach(ds => ds.data.shift());
+  /************************************************
+   *        Acceleration Chart (Chart.js)
+   ************************************************/
+  const ctx = document.getElementById('accChart').getContext('2d');
+  const accChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        { label: 'X Acc (Horizontal)', data: [], borderColor: 'red',   borderWidth: 1, fill: false, tension: 0 },
+        { label: 'Y Acc (Horizontal)', data: [], borderColor: 'green', borderWidth: 1, fill: false, tension: 0 },
+        { label: 'Z Acc (Vertical)',   data: [], borderColor: 'blue',  borderWidth: 1, fill: false, tension: 0 }
+      ]
+    },
+    options: {
+      responsive: false,
+      maintainAspectRatio: false,
+      scales: {
+        x: { display: false },
+        y: {
+          min: -10,
+          max: 10,
+          title: { display: true, text: 'Acceleration (g)' }
         }
-        accChart.update();
+      },
+      animation: false
+    }
+  });
+
+  function updateAccelerationChart(xAcc, yAcc, zAcc) {
+    accChart.data.labels.push(sampleCount);
+    accChart.data.datasets[0].data.push(xAcc);
+    accChart.data.datasets[1].data.push(yAcc);
+    accChart.data.datasets[2].data.push(zAcc);
+
+    // Keep the last 'maxPoints' data
+    while (accChart.data.labels.length > maxPoints) {
+      accChart.data.labels.shift();
+      accChart.data.datasets.forEach(ds => ds.data.shift());
+    }
+    accChart.update();
+  }
+
+  /************************************************
+   *    Altitude Milestones & Apogee Detection
+   ************************************************/
+  function checkMilestonesAndApogee(currentAltitude, previousAltitude) {
+    altitudeHistory.push(currentAltitude);
+    if (altitudeHistory.length > apogeeDetectionCount) {
+      altitudeHistory.shift();
     }
 
-    /************************************************
-     *    Altitude Milestones & Apogee Detection
-     ************************************************/
-    function checkMilestonesAndApogee(currentAltitude, previousAltitude) {
-        altitudeHistory.push(currentAltitude);
-        if (altitudeHistory.length > apogeeDetectionCount) {
-            altitudeHistory.shift();
-        }
-
-        const direction = (currentAltitude > previousAltitude) ? 'ascending' : 'descending';
-        if (direction === 'ascending' && currentAltitude > maxAltitudeReached) {
-            maxAltitudeReached = currentAltitude;
-        }
-
-        // Milestones every 300m
-        const currentMilestone = Math.floor(currentAltitude / 300) * 300;
-        const previousMilestone = Math.floor(previousAltitude / 300) * 300;
-        if (direction === 'ascending' && currentMilestone > previousMilestone && currentMilestone > 0) {
-            speakMessage(`Reached ${currentMilestone} meters`);
-        }
-
-        // Apogee detection
-        if (!apogeeAnnounced && altitudeHistory.length === apogeeDetectionCount) {
-            let decreasing = true;
-            for (let i = 0; i < altitudeHistory.length - 1; i++) {
-                if (altitudeHistory[i] <= altitudeHistory[i + 1]) {
-                    decreasing = false;
-                    break;
-                }
-            }
-            if (decreasing) {
-                speakMessage(`Apogee reached at ${Math.round(maxAltitudeReached)} meters. The rocket is now descending.`);
-                apogeeAnnounced = true;
-            }
-        }
+    const direction = (currentAltitude > previousAltitude) ? 'ascending' : 'descending';
+    if (direction === 'ascending' && currentAltitude > maxAltitudeReached) {
+      maxAltitudeReached = currentAltitude;
     }
 
-    /************************************************
-     *      Three.js Orientation Simulation
-     ************************************************/
-    const orientationCanvas = document.getElementById('orientationCanvas');
-    const renderer = new THREE.WebGLRenderer({ canvas: orientationCanvas, antialias: true, alpha: true });
-    renderer.setSize(orientationCanvas.offsetWidth, orientationCanvas.offsetHeight);
-
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x000000);
-
-    const camera = new THREE.PerspectiveCamera(
-        45,
-        orientationCanvas.clientWidth / orientationCanvas.clientHeight,
-        0.1,
-        1000
-    );
-    camera.position.set(0, 0, 10);
-
-    // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
-    scene.add(ambientLight);
-
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(5, 10, 7);
-    scene.add(directionalLight);
-
-    // Create rocket geometry (or load a model if desired)
-    const rocketGroup = new THREE.Group();
-    const rocketMaterial = new THREE.MeshPhongMaterial({ color: 0xffffff });
-    const bodyGeometry = new THREE.CylinderGeometry(0.3, 0.3, 2, 16);
-    const body = new THREE.Mesh(bodyGeometry, rocketMaterial);
-    rocketGroup.add(body);
-
-    const noseGeometry = new THREE.ConeGeometry(0.3, 0.6, 16);
-    const nose = new THREE.Mesh(noseGeometry, rocketMaterial);
-    nose.position.y = 1.3;
-    rocketGroup.add(nose);
-
-    // Optional fins
-    const finMaterial = new THREE.MeshPhongMaterial({ color: 0x00ff00 });
-    const finGeometry = new THREE.BoxGeometry(0.05, 0.5, 0.3);
-    for (let i = 0; i < 4; i++) {
-        const fin = new THREE.Mesh(finGeometry, finMaterial);
-        fin.position.y = -0.5; 
-        fin.position.x = 0.25 * Math.cos((Math.PI/2) * i);
-        fin.position.z = 0.25 * Math.sin((Math.PI/2) * i);
-        rocketGroup.add(fin);
-    }
-    scene.add(rocketGroup);
-
-    // Orientation variables
-    let roll = 0, pitch = 0, yaw = 0;
-
-    function updateOrientation(newRoll, newPitch, newYaw) {
-        roll = newRoll * (Math.PI / 180);  // convert degrees to radians if needed
-        pitch = newPitch * (Math.PI / 180);
-        yaw = newYaw * (Math.PI / 180);
-        rocketGroup.rotation.set(pitch, yaw, roll);
+    // Milestones every 300m
+    const currentMilestone  = Math.floor(currentAltitude / 300) * 300;
+    const previousMilestone = Math.floor(previousAltitude / 300) * 300;
+    if (direction === 'ascending' && currentMilestone > previousMilestone && currentMilestone > 0) {
+      speakMessage(`Reached ${currentMilestone} meters`);
     }
 
-    function animate() {
-        requestAnimationFrame(animate);
-        renderer.render(scene, camera);
+    // Apogee detection: require 'apogeeDetectionCount' consecutive descending data points
+    if (!apogeeAnnounced && altitudeHistory.length === apogeeDetectionCount) {
+      let decreasing = true;
+      for (let i = 0; i < altitudeHistory.length - 1; i++) {
+        if (altitudeHistory[i] <= altitudeHistory[i + 1]) {
+          decreasing = false;
+          break;
+        }
+      }
+      if (decreasing) {
+        speakMessage(`Apogee reached at ${Math.round(maxAltitudeReached)} meters. The rocket is now descending.`);
+        apogeeAnnounced = true;
+      }
     }
-    animate();
+  }
 
-    </script>
+  /************************************************
+   *  Three.js Setup: Acceleration Arrows + Rocket
+   ************************************************/
+  const orientationCanvas = document.getElementById('orientationCanvas');
+  const renderer = new THREE.WebGLRenderer({ canvas: orientationCanvas, antialias: true, alpha: true });
+  renderer.setSize(orientationCanvas.offsetWidth, orientationCanvas.offsetHeight);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x000000);
+
+  // Perspective camera
+  const camera = new THREE.PerspectiveCamera(
+      45,
+      orientationCanvas.clientWidth / orientationCanvas.clientHeight,
+      0.1,
+      1000
+  );
+  camera.position.set(0, 0, 10);
+
+  // Basic lighting
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+  scene.add(ambientLight);
+
+  const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  directionalLight.position.set(5, 10, 7);
+  scene.add(directionalLight);
+
+  // Create ArrowHelpers for X, Y, Z axes
+  const arrowX = new THREE.ArrowHelper(new THREE.Vector3(1,0,0), new THREE.Vector3(0,0,0), 0, 0xff0000);
+  const arrowY = new THREE.ArrowHelper(new THREE.Vector3(0,1,0), new THREE.Vector3(0,0,0), 0, 0x00ff00);
+  const arrowZ = new THREE.ArrowHelper(new THREE.Vector3(0,0,1), new THREE.Vector3(0,0,0), 0, 0x0000ff);
+  scene.add(arrowX, arrowY, arrowZ);
+
+  // Sprite labels for each axis
+  const labelX = createTextSprite("X Acc");
+  const labelY = createTextSprite("Y Acc");
+  const labelZ = createTextSprite("Z Acc");
+  scene.add(labelX, labelY, labelZ);
+
+  // Rocket mesh group (will rotate based on pitch/yaw/roll)
+  const rocketGroup = new THREE.Group();
+  const rocketMaterial = new THREE.MeshPhongMaterial({ color: 0xffffff });
+  const bodyGeometry  = new THREE.CylinderGeometry(0.3, 0.3, 2, 16);
+  const body          = new THREE.Mesh(bodyGeometry, rocketMaterial);
+  rocketGroup.add(body);
+
+  const noseGeometry  = new THREE.ConeGeometry(0.3, 0.6, 16);
+  const nose          = new THREE.Mesh(noseGeometry, rocketMaterial);
+  nose.position.y     = 1.3;
+  rocketGroup.add(nose);
+
+  // Optional fins
+  const finMaterial   = new THREE.MeshPhongMaterial({ color: 0x00ff00 });
+  const finGeometry   = new THREE.BoxGeometry(0.05, 0.5, 0.3);
+  for (let i = 0; i < 4; i++) {
+    const fin = new THREE.Mesh(finGeometry, finMaterial);
+    fin.position.y = -0.5; 
+    fin.position.x = 0.25 * Math.cos((Math.PI/2) * i);
+    fin.position.z = 0.25 * Math.sin((Math.PI/2) * i);
+    rocketGroup.add(fin);
+  }
+  scene.add(rocketGroup);
+
+  // Helper: create a canvas-based sprite for dynamic text
+  function createTextSprite(message) {
+    const canvas = document.createElement('canvas');
+    const ctx2d  = canvas.getContext('2d');
+    ctx2d.font = '24px Arial';
+    ctx2d.fillStyle = 'white';
+    ctx2d.fillText(message, 10, 30);
+    const texture = new THREE.CanvasTexture(canvas);
+    const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+    const sprite = new THREE.Sprite(spriteMaterial);
+    sprite.scale.set(1.5, 0.75, 1);
+    return sprite;
+  }
+
+  // Helper: rebuild the text label texture each update
+  function createLabelTexture(text) {
+    const c = document.createElement('canvas');
+    const ctx2d = c.getContext('2d');
+    ctx2d.font = '24px Arial';
+    ctx2d.fillStyle = 'white';
+    ctx2d.fillText(text, 10, 30);
+    return new THREE.CanvasTexture(c);
+  }
+
+  /************************************************
+   *   Update Arrow Lengths & Labels (Acceleration)
+   ************************************************/
+  function updateAccelerationArrows(xAcc, yAcc, zAcc) {
+    // scaleFactor controls arrow length per g
+    const scaleFactor = 1.0; 
+
+    // X Arrow
+    const xDir = (xAcc >= 0) ? 1 : -1; 
+    arrowX.setDirection(new THREE.Vector3(xDir, 0, 0).normalize());
+    arrowX.setLength(Math.abs(xAcc)*scaleFactor, 0.08, 0.08);
+    labelX.material.map.dispose();
+    labelX.material.map = createLabelTexture(`X: ${xAcc.toFixed(2)}g`);
+    labelX.position.set(xDir * Math.abs(xAcc)*scaleFactor + 0.3*xDir, 0, 0);
+
+    // Y Arrow
+    const yDir = (yAcc >= 0) ? 1 : -1; 
+    arrowY.setDirection(new THREE.Vector3(0, yDir, 0).normalize());
+    arrowY.setLength(Math.abs(yAcc)*scaleFactor, 0.08, 0.08);
+    labelY.material.map.dispose();
+    labelY.material.map = createLabelTexture(`Y: ${yAcc.toFixed(2)}g`);
+    labelY.position.set(0, yDir * Math.abs(yAcc)*scaleFactor + 0.3*yDir, 0);
+
+    // Z Arrow
+    const zDir = (zAcc >= 0) ? 1 : -1; 
+    arrowZ.setDirection(new THREE.Vector3(0, 0, zDir).normalize());
+    arrowZ.setLength(Math.abs(zAcc)*scaleFactor, 0.08, 0.08);
+    labelZ.material.map.dispose();
+    labelZ.material.map = createLabelTexture(`Z: ${zAcc.toFixed(2)}g`);
+    labelZ.position.set(0, 0, zDir * Math.abs(zAcc)*scaleFactor + 0.3*zDir);
+  }
+
+  /************************************************
+   *   Orientation Smoothing for the Rocket
+   ************************************************/
+  let currentRoll  = 0, currentPitch  = 0, currentYaw  = 0;
+  let targetRoll   = 0, targetPitch   = 0, targetYaw   = 0;
+  const orientationLerp = 0.1; 
+  // The higher orientationLerp is, the faster you'll snap to the new angle.
+
+  /************************************************
+   *   Simple WASD Camera Movement
+   ************************************************/
+  let cameraSpeed = 0.2;  // Movement speed for each key press
+  window.addEventListener('keydown', (e) => {
+    switch(e.key.toLowerCase()) {
+      case 'w': // move camera forward
+        camera.position.z -= cameraSpeed;
+        break;
+      case 's': // move camera backward
+        camera.position.z += cameraSpeed;
+        break;
+      case 'a': // strafe camera left
+        camera.position.x -= cameraSpeed;
+        break;
+      case 'd': // strafe camera right
+        camera.position.x += cameraSpeed;
+        break;
+      case 'q': // move camera up
+        camera.position.y += cameraSpeed;
+        break;
+      case 'e': // move camera down
+        camera.position.y -= cameraSpeed;
+        break;
+    }
+  });
+
+  /************************************************
+   *   Mouse Look via Pointer Lock
+   ************************************************/
+  let yawCam = 0, pitchCam = 0;
+  const mouseSensitivity = 0.002; 
+
+  orientationCanvas.addEventListener('click', () => {
+    orientationCanvas.requestPointerLock();
+  });
+
+  document.addEventListener('pointerlockchange', () => {
+    if (document.pointerLockElement === orientationCanvas) {
+      // Now locked, listen for mousemove
+      document.addEventListener('mousemove', onMouseMove, false);
+    } else {
+      // Pointer unlocked
+      document.removeEventListener('mousemove', onMouseMove, false);
+    }
+  }, false);
+
+  function onMouseMove(e) {
+    yawCam   -= e.movementX * mouseSensitivity;
+    pitchCam -= e.movementY * mouseSensitivity;
+
+    // Limit pitch to avoid flipping
+    const maxPitch = Math.PI / 2 - 0.1; 
+    if (pitchCam >  maxPitch) pitchCam =  maxPitch;
+    if (pitchCam < -maxPitch) pitchCam = -maxPitch;
+
+    camera.rotation.set(pitchCam, yawCam, 0, 'YXZ');
+  }
+
+  /************************************************
+   *   Animation Loop for Three.js
+   ************************************************/
+  function animate() {
+    requestAnimationFrame(animate);
+
+    // Smoothly interpolate rocket's orientation
+    // Convert degrees -> radians inside the smoothing step
+    currentRoll  += orientationLerp * ( (targetRoll  * Math.PI/180) - currentRoll );
+    currentPitch += orientationLerp * ( (targetPitch * Math.PI/180) - currentPitch );
+    currentYaw   += orientationLerp * ( (targetYaw   * Math.PI/180) - currentYaw );
+
+    // Apply final orientation to rocket
+    rocketGroup.rotation.set(currentPitch, currentYaw, currentRoll);
+
+    renderer.render(scene, camera);
+  }
+  animate();
+  </script>
 </body>
 </html>
