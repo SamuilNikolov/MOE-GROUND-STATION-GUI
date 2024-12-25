@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Cesium Rocket Visualization - Red Dot</title>
+  <title>Cesium Rocket Visualization - Toggle Lock/Free Roam + Live 3D Distance</title>
 
   <!-- Cesium CSS -->
   <link
@@ -24,11 +24,66 @@
       width: 100%;
       height: 100%;
     }
+
+    #toggleLockBtn {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 999; /* on top of Cesium canvas */
+      padding: 8px 12px;
+      font-size: 14px;
+      cursor: pointer;
+      background: rgba(0,0,0,0.6);
+      color: white;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+    }
+
+    /* A small form for lat/lon input */
+    #locationForm {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      z-index: 999;
+      background: rgba(0,0,0,0.6);
+      color: white;
+      padding: 8px;
+      border-radius: 5px;
+    }
+    #locationForm label {
+      display: block;
+      margin: 3px 0 2px;
+    }
+    #locationForm input {
+      width: 80px;
+      margin-right: 8px;
+    }
+    #locationForm button {
+      margin-top: 8px;
+      cursor: pointer;
+      background: rgba(255,255,255,0.2);
+      color: white;
+      border: 1px solid #ccc;
+      padding: 4px 8px;
+      border-radius: 3px;
+    }
   </style>
 </head>
 <body>
   <!-- The Cesium globe container -->
   <div id="cesiumContainer"></div>
+  
+  <!-- A button to toggle lock/unlock camera -->
+  <button id="toggleLockBtn">Lock on Rocket</button>
+
+  <!-- A small form to input lat/lon, then draw line to rocket -->
+  <div id="locationForm">
+    <label>Your Latitude:</label>
+    <input type="text" id="myLat" placeholder="e.g. 29.2108" />
+    <label>Your Longitude:</label>
+    <input type="text" id="myLon" placeholder="e.g. -81.0228" />
+    <button id="drawLineBtn">Draw Line to Rocket</button>
+  </div>
 
   <!-- Socket.IO (adjust path if needed) -->
   <script src="/socket.io/socket.io.js"></script>
@@ -39,8 +94,7 @@
   /************************************************
    *           Basic Cesium Setup
    ************************************************/
-  // Insert your Ion token here
-  Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI5NDQyNDE4My1kNjkxLTQ0MDUtOWEyNC1mOTM5MTA3ZjNkNmYiLCJpZCI6MjY0Njk2LCJpYXQiOjE3MzUwNjk4OTZ9._NYeNPDjESMzfcYTEBkiR-nnPKCCDNYdt2skAjllwdM';
+   Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI5NDQyNDE4My1kNjkxLTQ0MDUtOWEyNC1mOTM5MTA3ZjNkNmYiLCJpZCI6MjY0Njk2LCJpYXQiOjE3MzUwNjk4OTZ9._NYeNPDjESMzfcYTEBkiR-nnPKCCDNYdt2skAjllwdM';
 
   const viewer = new Cesium.Viewer('cesiumContainer', {
     shouldAnimate: true,
@@ -51,77 +105,241 @@
     terrainProvider: new Cesium.EllipsoidTerrainProvider()
   });
 
-  // Optionally hide credits
+  // (Optional) Hide default credits
   // viewer.scene.frameState.creditDisplay.container.style.display='none';
 
   /************************************************
-   *           Rocket Entity (Red Dot)
+   *         Rocket Entity (Red Dot)
    ************************************************/
-  // We'll keep a short trail of the last 10 updates (10 position samples).
-  // Use a SampledPositionProperty for a neat real-time path.
-  const rocketPositionProperty = new Cesium.SampledPositionProperty();
+  const rocketPosition = new Cesium.SampledPositionProperty();
+  let rocketAltitude = 0;
 
-  // Create an entity with a red dot "point" and a path.
+  // The rocket entity
   const rocketEntity = viewer.entities.add({
     name: 'Rocket',
-    position: rocketPositionProperty,
-    // Orientation won't matter much for a dot, but you can remove or keep velocity orientation if desired:
-    orientation: new Cesium.VelocityOrientationProperty(rocketPositionProperty),
-
-    // A simple red dot
+    position: rocketPosition,
+    orientation: new Cesium.VelocityOrientationProperty(rocketPosition),
     point: {
       pixelSize: 10,
       color: Cesium.Color.RED,
       outlineColor: Cesium.Color.WHITE,
       outlineWidth: 1
     },
-
-    // Short trailing path
     path: {
       show: true,
       leadTime: 0,
-      trailTime: 999999, // We'll manually limit to the last 10 samples
+      trailTime: 999999,
       width: 3,
-      material: Cesium.Color.YELLOW
+      material: Cesium.Color.BLUE
     }
   });
 
-  // Fly camera to the rocket on first data update
+  // Label showing rocket altitude
+  viewer.entities.add({
+    position: rocketPosition,
+    label: {
+      text: new Cesium.CallbackProperty(() => {
+        return `${rocketAltitude.toFixed(0)} m`;
+      }, false),
+      font: '18px sans-serif',
+      fillColor: Cesium.Color.WHITE,
+      showBackground: true,
+      backgroundColor: Cesium.Color.BLACK,
+      pixelOffset: new Cesium.Cartesian2(50, 0),
+      heightReference: Cesium.HeightReference.NONE
+    }
+  });
+
+  // We track positions in an array, e.g. for short path
+  const lastPositions = [];
   let firstUpdate = true;
 
   /************************************************
-   *          Real-time Data with Socket.IO
+   *         Socket.IO for Real-time Data
    ************************************************/
-  const socket = io();
+  const socket = io(); // or specify the correct path/port
 
-  // We'll store the last 10 position samples in an array
-  let lastPositions = [];
-
-  socket.on('gpsData', data => {
+  socket.on('gpsData', (data) => {
     const { lat, lon, altitude } = data;
-    if (lat !== undefined && lon !== undefined && altitude !== undefined) {
-      // Time-stamped position sample
+    if (lat != null && lon != null && altitude != null) {
+      rocketAltitude = altitude;
+
       const now = Cesium.JulianDate.now();
-      const pos = Cesium.Cartesian3.fromDegrees(lon, lat, altitude);
+      const cartPos = Cesium.Cartesian3.fromDegrees(lon, lat, altitude);
 
-      rocketPositionProperty.addSample(now, pos);
-      lastPositions.push({ time: now, pos });
-
-      // Keep only the last 10
-      if (lastPositions.length > 100) {
-        const oldest = lastPositions.shift();
-        rocketPositionProperty.removeSample(oldest.time);
+      rocketPosition.addSample(now, cartPos);
+      lastPositions.push({ time: now, pos: cartPos });
+      if (lastPositions.length > 10) {
+        // remove oldest if you want
+        // let oldest = lastPositions.shift();
+        // rocketPosition.removeSample(oldest.time);
       }
 
-      // Fly once on the first update
+      // Fly or track on first data
       if (firstUpdate) {
-        viewer.flyTo(rocketEntity);
+        // By default, we start locked onto the rocket
+        viewer.trackedEntity = rocketEntity;
         firstUpdate = false;
       }
     }
   });
 
-  console.log('Cesium full-screen rocket visualization (red dot) ready.');
+  console.log('Cesium rocket with dynamic altitude label + camera toggling loaded.');
+
+  /************************************************
+   *         Toggle Lock vs. Free Roam
+   ************************************************/
+  let locked = true; // start locked on the rocket
+  const toggleLockBtn = document.getElementById('toggleLockBtn');
+
+  function updateButtonLabel() {
+    toggleLockBtn.innerText = locked ? 'Free Roam' : 'Lock on Rocket';
+  }
+  updateButtonLabel();
+
+  toggleLockBtn.addEventListener('click', () => {
+    locked = !locked;
+    if (locked) {
+      viewer.trackedEntity = rocketEntity;
+    } else {
+      viewer.trackedEntity = undefined;
+    }
+    updateButtonLabel();
+  });
+
+  // Also allow a keyboard toggle, say 'T' key
+  window.addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() === 't') {
+      locked = !locked;
+      if (locked) {
+        viewer.trackedEntity = rocketEntity;
+      } else {
+        viewer.trackedEntity = undefined;
+      }
+      updateButtonLabel();
+    }
+  });
+
+  /************************************************
+   *   Draw a line from "Me" to the rocket, continuously
+   ************************************************/
+  let myPos = null; // we'll store your location as a Cartesian3
+  let myLocationEntity;
+  let distanceLineEntity;      // the line entity
+  let distanceLineLabelEntity; // the distance label entity
+
+  const drawLineBtn = document.getElementById('drawLineBtn');
+  drawLineBtn.addEventListener('click', () => {
+    const latStr = document.getElementById('myLat').value.trim();
+    const lonStr = document.getElementById('myLon').value.trim();
+    if(!latStr || !lonStr) {
+      alert('Please enter your latitude and longitude!');
+      return;
+    }
+    // parse as float
+    const myLat = parseFloat(latStr);
+    const myLon = parseFloat(lonStr);
+    if(isNaN(myLat) || isNaN(myLon)) {
+      alert('Invalid lat/lon. Must be numeric, e.g. 29.2108, -81.0228');
+      return;
+    }
+
+    // create or update "my location" entity at altitude=0
+    myPos = Cesium.Cartesian3.fromDegrees(myLon, myLat, 0);
+
+    if(!myLocationEntity) {
+      myLocationEntity = viewer.entities.add({
+        name: 'My Location',
+        position: myPos,
+        point: {
+          pixelSize: 8,
+          color: Cesium.Color.GREEN,
+          outlineColor: Cesium.Color.WHITE,
+          outlineWidth: 1
+        },
+        label: {
+          text: 'Me',
+          font: '18px sans-serif',
+          fillColor: Cesium.Color.WHITE,
+          showBackground: true,
+          backgroundColor: Cesium.Color.BLACK,
+          pixelOffset: new Cesium.Cartesian2(20, 0),
+          heightReference: Cesium.HeightReference.NONE
+        }
+      });
+    } else {
+      // just update position
+      myLocationEntity.position = myPos;
+    }
+
+    // If line + label exist, remove them so we can re-create
+    if(distanceLineEntity) {
+      viewer.entities.remove(distanceLineEntity);
+    }
+    if(distanceLineLabelEntity) {
+      viewer.entities.remove(distanceLineLabelEntity);
+    }
+
+    // Create a polyline with a dynamic positions property
+    distanceLineEntity = viewer.entities.add({
+      name: 'MyToRocketLine',
+      polyline: {
+        positions: new Cesium.CallbackProperty(()=>{
+          // Each frame, we get the rocket's current or last-known position:
+          let rocketCartPos = rocketPosition.getValue(Cesium.JulianDate.now());
+          if(!rocketCartPos && lastPositions.length>0){
+            rocketCartPos = lastPositions[lastPositions.length-1].pos;
+          }
+          if(!rocketCartPos || !myPos) {
+            // if rocket not defined or we don't have "me", return empty array
+            return [];
+          }
+          return [myPos, rocketCartPos];
+        }, false),
+        width: 3,
+        material: Cesium.Color.YELLOW
+      }
+    });
+
+    // Create a label with a dynamic text property for the distance
+    distanceLineLabelEntity = viewer.entities.add({
+      position: new Cesium.CallbackProperty(()=>{
+        // We'll place the label at the midpoint each frame
+        let rocketCartPos = rocketPosition.getValue(Cesium.JulianDate.now());
+        if(!rocketCartPos && lastPositions.length>0){
+          rocketCartPos = lastPositions[lastPositions.length-1].pos;
+        }
+        if(!rocketCartPos || !myPos) {
+          return Cesium.Cartesian3.ZERO;
+        }
+        return Cesium.Cartesian3.midpoint(myPos, rocketCartPos, new Cesium.Cartesian3());
+      }, false),
+      label: {
+        text: new Cesium.CallbackProperty(()=>{
+          // We'll compute 3D distance each frame
+          let rocketCartPos = rocketPosition.getValue(Cesium.JulianDate.now());
+          if(!rocketCartPos && lastPositions.length>0){
+            rocketCartPos = lastPositions[lastPositions.length-1].pos;
+          }
+          if(!rocketCartPos || !myPos) {
+            return 'No Data';
+          }
+          const dist3D = Cesium.Cartesian3.distance(myPos, rocketCartPos);
+          const distKm = dist3D / 1000.0;
+          return `${distKm.toFixed(2)} km`;
+        }, false),
+        font: '18px sans-serif',
+        fillColor: Cesium.Color.WHITE,
+        showBackground: true,
+        backgroundColor: Cesium.Color.BLACK,
+        pixelOffset: new Cesium.Cartesian2(0, 20),
+        heightReference: Cesium.HeightReference.NONE
+      }
+    });
+
+    // Optionally fly to the line so we can see it
+    viewer.flyTo(distanceLineEntity);
+  });
   </script>
 </body>
 </html>

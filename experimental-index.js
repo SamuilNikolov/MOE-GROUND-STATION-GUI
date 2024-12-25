@@ -73,7 +73,7 @@ let baseLon = -81.022835;
 // Altitude simulation variables
 let altitude = 0;
 let ascending = true; // start by ascending
-const ALT_STEP = 10;  // increment altitude by 10m per second
+const ALT_STEP = 5;  // increment altitude by 10m per second
 const MAX_ALT = 3000; // max altitude
 
 setInterval(() => {
