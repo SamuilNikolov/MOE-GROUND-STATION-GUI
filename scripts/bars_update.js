@@ -5,7 +5,7 @@
   function updateVelocity(velocity){
     const norm = Math.min(velocity/maxVelocity,1);
     rocket.style.height = (norm*100)+'%';
-    velocityDisplay.innerText = 'Velocity: ' + velocity + ' km/h';
+    velocityDisplay.innerText = 'Velocity: ' + velocity.toFixed() + ' km/h';
 
     document.querySelectorAll('#velocity-bar .tick-label').forEach(label=>{
       const val = parseInt(label.innerText,10);
@@ -27,7 +27,7 @@
   function updateTemperature(temp){
     const norm = Math.min(temp/maxTemperature,1);
     temperatureFill.style.height=(norm*100)+'%';
-    temperatureDisplay.innerText='Temp: '+temp+' °C';
+    temperatureDisplay.innerText='Temp: '+temp.toFixed()+' °C';
 
     document.querySelectorAll('#temperature-bar .tick-label').forEach(label=>{
       const val = parseInt(label.innerText,10);

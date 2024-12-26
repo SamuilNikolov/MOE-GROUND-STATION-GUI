@@ -103,7 +103,9 @@
     <button id="modeBtn">Mode: LOCKED</button>
     <div class="sliderContainer">
       <label for="distanceSlider">Distance:</label>
-      <input id="distanceSlider" type="range" min="100" max="20000" step="100" value="5000">
+      <input id="distanceSlider" type="range" min="100" max="10000" step="100" value="5000">
+      <label for="distanceSlider">Angle:</label>
+      <input id="pitchSlider" type="range" min="0" max="85" step="0.1" value="30">
     </div>
   </div>
 
@@ -257,7 +259,14 @@
 
   // For circle mode
   let circleHeading = 0; 
-  const circlePitch = Cesium.Math.toRadians(-45);
+  const pitchSlider = document.getElementById('pitchSlider');
+  let pitchAngle = parseFloat(pitchSlider.value);
+  let circlePitch = Cesium.Math.toRadians(pitchAngle*-1);
+  pitchSlider.addEventListener('input', () => {
+    pitchAngle = parseFloat(pitchSlider.value);
+    circlePitch = Cesium.Math.toRadians(pitchAngle*-1);
+  });
+
 
   /************************************************
    *  Distance Slider for circle mode
@@ -281,7 +290,7 @@
     if(!rocketCartPos){
       return; // can't orbit if no rocket data
     }
-    circleHeading += 0.002; 
+    circleHeading += 0.001; 
     const headingPitchRange = new Cesium.HeadingPitchRange(circleHeading, circlePitch, circleDistance);
     viewer.scene.camera.lookAt(rocketCartPos, headingPitchRange);
   });
