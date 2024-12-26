@@ -68,7 +68,7 @@
 
   <!-- External Scripts -->
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script src="/socket.io/socket.io.js"></script>
+  <script src="socket.io/socket.io.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
 
@@ -179,7 +179,7 @@
 
       // Telemetry beep every 2 samples
       if(sampleCount % 2 === 0){
-        beep(100, altitude/10+300, 0.5, 'sine');
+        beep(100, altitude/2+100, 0.5, 'sine');
       }
     }
 
@@ -255,7 +255,7 @@
 
   // Grid plane
   const planeSize = 20;
-  const gridHelper = new THREE.GridHelper(planeSize, 20, 0x00ff00, 0x00ff00);
+  const gridHelper = new THREE.GridHelper(planeSize, 20, 0xffffff, 0xffffff);
   gridHelper.position.y = -2;
   scene.add(gridHelper);
 
