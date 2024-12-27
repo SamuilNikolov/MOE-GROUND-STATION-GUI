@@ -19,7 +19,9 @@ app.get('/shared.css', (req, res) => {
     res.setHeader('Content-Type', 'text/css');
     res.sendFile(path.join(__dirname, 'shared.css'));
 });
-
+app.get('/dashboard', (req, res) => {
+    res.sendFile(path.join(__dirname, 'dashboard.html'));
+});
 // CSV Setup
 const startTime = new Date();
 const timestampString = startTime.toISOString().replace(/[:.]/g, '-');
@@ -243,6 +245,7 @@ class RocketSimulation {
 
 // Initialize simulation with launch coordinates
 const simulation = new RocketSimulation(29.210815, -81.022835);
+const START_TIME = Date.now(); // Store simulation start time
 
 // Update loop
 setInterval(() => {
@@ -256,9 +259,9 @@ setInterval(() => {
     console.log(`${countdownStr} - Alt:${data.altitude.toFixed(1)}m, Vel:${data.velocity.toFixed(1)}m/s, Stage:${simulation.stage}`);
 
     // Append new row to CSV
-    const currentTime = new Date().toISOString();
+    const elapsedTime = Date.now() - START_TIME;
     const row = [
-        currentTime,
+        elapsedTime,  // This will now start from 0 and increment
         data.lat,
         data.lon,
         data.velocity,

@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rocket Telemetry Dashboard</title>
+    <script src="offline-libs/socket-io-min.js"></script>
+    <script src="offline-libs/chart-min.js"></script>
+    <style>
+        :root {
+            --primary: #00ff88;
+            --secondary: #ff3366;
+            --bg-dark: #1a1a1a;
+            --text-light: #ffffff;
+            --card-bg: #2a2a2a;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Arial', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-light);
+            padding: 20px;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .card.large {
+            grid-column: span 2;
+        }
+
+        .card h2 {
+            color: var(--primary);
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .current-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            text-align: right;
+            color: var(--text-light);
+            margin-bottom: 10px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .current-value .unit {
+            font-size: 1rem;
+            color: #888;
+            margin-left: 5px;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+
+        .data-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+
+        .data-item {
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 5px;
+        }
+
+        .data-item span {
+            display: block;
+            font-size: 0.8rem;
+            color: #888;
+        }
+
+        .data-item strong {
+            font-size: 1.2rem;
+        }
+
+        #countdown {
+            font-size: 3rem;
+            text-align: center;
+            color: var(--primary);
+            font-weight: bold;
+            margin: 20px 0;
+        }
+
+        .stage {
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-align: center;
+            color: var(--primary);
+            margin-top: 10px;
+        }
+
+        @media (max-width: 768px) {
+            .card.large {
+                grid-column: span 1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="countdown">T-00:00</div>
+    <div class="dashboard">
+        <div class="card large">
+            <h2>Altitude</h2>
+            <div class="current-value">
+                <span id="currentAltitude">0</span>
+                <span class="unit">meters</span>
+            </div>
+            <div class="chart-container">
+                <canvas id="altitudeChart"></canvas>
+            </div>
+        </div>
+        <div class="card large">
+            <h2>Velocity</h2>
+            <div class="current-value">
+                <span id="currentVelocity">0</span>
+                <span class="unit">km/h</span>
+            </div>
+            <div class="chart-container">
+                <canvas id="velocityChart"></canvas>
+            </div>
+        </div>
+        <div class="card">
+            <h2>Attitude</h2>
+            <div class="data-grid">
+                <div class="data-item">
+                    <span>Pitch</span>
+                    <strong id="pitch">0°</strong>
+                </div>
+                <div class="data-item">
+                    <span>Roll</span>
+                    <strong id="roll">0°</strong>
+                </div>
+                <div class="data-item">
+                    <span>Yaw</span>
+                    <strong id="yaw">0°</strong>
+                </div>
+                <div class="data-item">
+                    <span>Temperature</span>
+                    <strong id="temperature">0°C</strong>
+                </div>
+            </div>
+        </div>
+        <div class="card">
+            <h2>Acceleration (g)</h2>
+            <div class="data-grid">
+                <div class="data-item">
+                    <span>X-Axis</span>
+                    <strong id="xAcc">0</strong>
+                </div>
+                <div class="data-item">
+                    <span>Y-Axis</span>
+                    <strong id="yAcc">0</strong>
+                </div>
+                <div class="data-item">
+                    <span>Z-Axis</span>
+                    <strong id="zAcc">0</strong>
+                </div>
+            </div>
+        </div>
+        <div class="card">
+            <h2>Position</h2>
+            <div class="data-grid">
+                <div class="data-item">
+                    <span>Latitude</span>
+                    <strong id="latitude">0°</strong>
+                </div>
+                <div class="data-item">
+                    <span>Longitude</span>
+                    <strong id="longitude">0°</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        
+        // Initialize charts
+        const createChart = (ctx, label, color) => {
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: label,
+                        data: [],
+                        borderColor: color,
+                        tension: 0.4,
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            },
+                            ticks: {
+                                color: '#fff'
+                            }
+                        },
+                        x: {
+                            display: true,
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            },
+                            ticks: {
+                                color: '#fff',
+                                maxTicksLimit: 10
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    animation: {
+                        duration: 0
+                    }
+                }
+            });
+        };
+
+        const altitudeChart = createChart(
+            document.getElementById('altitudeChart').getContext('2d'),
+            'Altitude (m)',
+            '#00ff88'
+        );
+
+        const velocityChart = createChart(
+            document.getElementById('velocityChart').getContext('2d'),
+            'Velocity (km/h)',
+            '#ff3366'
+        );
+
+        socket.on('gpsData', (data) => {
+            // Update charts (keeping all data points)
+            const timeLabel = new Date().toLocaleTimeString();
+            
+            altitudeChart.data.labels.push(timeLabel);
+            altitudeChart.data.datasets[0].data.push(data.altitude);
+            
+            velocityChart.data.labels.push(timeLabel);
+            velocityChart.data.datasets[0].data.push(data.velocity);
+
+            // Update current values with animation
+            const currentAltitude = document.getElementById('currentAltitude');
+            const currentVelocity = document.getElementById('currentVelocity');
+            
+            currentAltitude.textContent = data.altitude.toFixed(1);
+            currentVelocity.textContent = data.velocity.toFixed(1);
+
+            altitudeChart.update('none'); // Disable animation for smoother updates
+            velocityChart.update('none');
+
+            // Update attitude data
+            document.getElementById('pitch').textContent = `${data.pitch.toFixed(1)}°`;
+            document.getElementById('roll').textContent = `${data.roll.toFixed(1)}°`;
+            document.getElementById('yaw').textContent = `${data.yaw.toFixed(1)}°`;
+            document.getElementById('temperature').textContent = `${data.temperature.toFixed(1)}°C`;
+
+            // Update acceleration data
+            document.getElementById('xAcc').textContent = data.xAcc.toFixed(2);
+            document.getElementById('yAcc').textContent = data.yAcc.toFixed(2);
+            document.getElementById('zAcc').textContent = data.zAcc.toFixed(2);
+
+            // Update position data
+            document.getElementById('latitude').textContent = `${data.lat.toFixed(6)}°`;
+            document.getElementById('longitude').textContent = `${data.lon.toFixed(6)}°`;
+
+            // Update countdown/mission time
+            if (data.countdown !== null) {
+                document.getElementById('countdown').textContent = `T-${data.countdown}`;
+            } else {
+                const missionTime = Math.floor(data.altitude > 0 ? data.velocity / 10 : 0);
+                document.getElementById('countdown').textContent = `T+${missionTime}`;
+            }
+        });
+
+        // Handle offline capability
+        window.addEventListener('offline', () => {
+            console.log('Lost connection');
+        });
+
+        window.addEventListener('online', () => {
+            console.log('Connection restored');
+        });
+    </script>
+</body>
+</html>
