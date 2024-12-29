@@ -119,7 +119,7 @@
     <form id="groundStationForm">
       <div>
         <label>Number of Ground Stations:</label>
-        <input type="number" id="stationCount" min="1" max="10" value="1">
+        <input type="number" id="stationCount" min="0" max="10" value="0">
       </div>
       <div id="stationInputs"></div>
       <button type="submit">Start Visualization</button>
@@ -131,7 +131,7 @@
 
   <!-- 3) UI Container: camera mode button + distance/pitch sliders -->
   <div id="uiContainer" style="display: none;">
-    <button id="modeBtn">Mode: LOCKED</button>
+    <button id="modeBtn">Mode: FREE</button>
     <div class="sliderContainer">
       <label for="distanceSlider">Distance:</label>
       <input id="distanceSlider" type="range" min="100" max="10000" step="100" value="5000">
@@ -229,9 +229,11 @@
       viewer.clock.multiplier = 1;
 
       /***********************************************
-       * 1) Add Ground Stations
+       * 1) Add Ground Stations (if any)
        ***********************************************/
-      const stationEntities = groundStations.map(station => {
+       let stationEntities = [];
+       if(groundStations.length>0){
+       stationEntities = groundStations.map(station => {
         const position = Cesium.Cartesian3.fromDegrees(station.lon, station.lat, 0);
         return viewer.entities.add({
           name: station.name,
@@ -253,7 +255,7 @@
           }
         });
       });
-
+    }
       /***********************************************
        * 2) Rocket Entity
        ***********************************************/
@@ -281,15 +283,12 @@
           leadTime: 0,
           trailTime: 999999,
           width: 3,
-          material: Cesium.Color.BLUE
+          material: Cesium.Color.RED
         },
         // The label uses a CallbackProperty so it always shows the latest altitude
         label: {
           text: new Cesium.CallbackProperty(() => {
-            // If no altitude yet, show "No Data"
-            if (rocketAltitude === 0) {
-              return 'SPECTRE -> No Data';
-            }
+
             return `SPECTRE -> ${rocketAltitude.toFixed(0)} m`;
           }, false),
           font: '18px sans-serif',
@@ -304,6 +303,7 @@
       /***********************************************
        * 3) Polylines + Distance Labels
        ***********************************************/
+      
       groundStations.forEach((station, idx) => {
         const stationEntity = stationEntities[idx];
 
@@ -366,10 +366,6 @@
           const cartPos = Cesium.Cartesian3.fromDegrees(lon, lat, altitude);
           rocketPosition.addSample(currentTime, cartPos);
 
-          // lock camera if not locked yet
-          if (!viewer.trackedEntity) {
-            viewer.trackedEntity = rocketEntity;
-          }
         }
       });
 
@@ -377,15 +373,14 @@
        * 5) 3 Camera Modes: LOCKED, FREE, CIRCLE
        ***********************************************/
       let modeBtn  = document.getElementById('modeBtn');
-      let mode     = 'LOCKED'; 
-
+      let mode     = 'FREE'; 
       function updateModeLabel() {
         modeBtn.innerText = `Mode: ${mode}`;
       }
-      updateModeLabel();
 
       // cycle modes on button
       modeBtn.addEventListener('click', () => {
+
         if (mode === 'LOCKED') {
           mode = 'FREE';
         } else if (mode === 'FREE') {
