@@ -160,6 +160,7 @@
       recentCoordinates.push([lat, lon]);
       if(recentCoordinates.length>maxCoords) recentCoordinates.shift();
       polyline.setLatLngs(recentCoordinates);
+      sampleCount++;
     }
 
     // Update bars
@@ -173,13 +174,12 @@
 
     // Acceleration data => chart & 3D arrows
     if(xAcc!==undefined && yAcc!==undefined && zAcc!==undefined){
-      sampleCount++;
       updateAccelerationChart(xAcc,yAcc,zAcc);
       updateAccelerationArrows(xAcc,yAcc,zAcc);
 
       // Telemetry beep every 2 samples
       if(sampleCount % 2 === 0){
-        beep(100, altitude/2+100, 0.5, 'sine');
+        beep(100, altitude/2+300, 0.5, 'sine');
       }
     }
 

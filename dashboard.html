@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Rocket Telemetry Dashboard</title>
     <script src="offline-libs/socket-io-min.js"></script>
-    <script src="offline-libs/chart-min.js"></script>
+    <script src="offline-libs/chart-min.js"></script>  
+    <script src="scripts/audio_beep.js"></script>
+
     <style>
         :root {
             --primary: #00ff88;
@@ -120,10 +122,40 @@
                 grid-column: span 1;
             }
         }
+        #enable-voice-btn {
+        background: var(--primary);
+        color: var(--text-light);
+        border: none;
+        border-radius: 5px;
+        padding: 10px 20px;
+        font-size: 1rem;
+        font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        cursor: pointer;
+        transition: background 0.3s, transform 0.2s;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    }
+
+    #enable-voice-btn:hover {
+        background: var(--secondary);
+        transform: scale(1.05);
+    }
+
+    #enable-voice-btn:active {
+        transform: scale(1);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    }
+
+    #enable-voice-btn:focus {
+        outline: 2px solid var(--secondary);
+        outline-offset: 2px;
+    }
     </style>
 </head>
 <body>
-    <div id="countdown">T-00:00</div>
+    <div id="countdown">YANTRA FLIGHT COMPUTER LIVE TELEMETRY</div>
+
     <div class="dashboard">
         <div class="card large">
             <h2>Altitude</h2>
@@ -196,11 +228,18 @@
                 </div>
             </div>
         </div>
+        <button id="enable-voice-btn">Enable Audio</button>
+
     </div>
 
     <script>
+          const voiceBtn           = document.getElementById('enable-voice-btn');
+          voiceBtn.addEventListener('click', () => {
+    beepEnabled = true;
+    console.log('Audio beeps enabled by user.');
+  });
         const socket = io();
-        
+        let sampleCount = 0;
         // Initialize charts
         const createChart = (ctx, label, color) => {
             return new Chart(ctx, {
@@ -266,7 +305,11 @@
         socket.on('gpsData', (data) => {
             // Update charts (keeping all data points)
             const timeLabel = new Date().toLocaleTimeString();
-            
+            sampleCount++;
+            if(sampleCount % 2 === 0 && beepEnabled){
+        beep(100, data.altitude/4+300, 0.5, 'sine');
+        console.log('beep')
+      }
             altitudeChart.data.labels.push(timeLabel);
             altitudeChart.data.datasets[0].data.push(data.altitude);
             
@@ -282,13 +325,14 @@
 
             altitudeChart.update('none'); // Disable animation for smoother updates
             velocityChart.update('none');
-
+            try{
             // Update attitude data
             document.getElementById('pitch').textContent = `${data.pitch.toFixed(1)}°`;
             document.getElementById('roll').textContent = `${data.roll.toFixed(1)}°`;
             document.getElementById('yaw').textContent = `${data.yaw.toFixed(1)}°`;
             document.getElementById('temperature').textContent = `${data.temperature.toFixed(1)}°C`;
-
+            }
+catch{}
             // Update acceleration data
             document.getElementById('xAcc').textContent = data.xAcc.toFixed(2);
             document.getElementById('yAcc').textContent = data.yAcc.toFixed(2);
@@ -298,13 +342,6 @@
             document.getElementById('latitude').textContent = `${data.lat.toFixed(6)}°`;
             document.getElementById('longitude').textContent = `${data.lon.toFixed(6)}°`;
 
-            // Update countdown/mission time
-            if (data.countdown !== null) {
-                document.getElementById('countdown').textContent = `T-${data.countdown}`;
-            } else {
-                const missionTime = Math.floor(data.altitude > 0 ? data.velocity / 10 : 0);
-                document.getElementById('countdown').textContent = `T+${missionTime}`;
-            }
         });
 
         // Handle offline capability

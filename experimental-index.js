@@ -67,7 +67,7 @@ class RocketSimulation {
         this.countdownTime = 10;  // 10 second countdown
         this.maxAltitude = 3000;  // meters
         this.maxVelocity = 300;   // m/s
-        this.burnTime = 30;       // seconds
+        this.burnTime = 10;       // seconds
         this.gravity = 9.81;      // m/s²
         this.deltaTime = 0.2;     // 200ms update interval
         
@@ -234,11 +234,7 @@ class RocketSimulation {
             xAcc: acceleration.xAcc,
             yAcc: acceleration.yAcc,
             zAcc: acceleration.zAcc,
-            temperature,
-            pitch: this.pitch,
-            yaw: this.yaw,
-            roll: this.roll,
-            countdown: this.stage === 'countdown' ? Math.abs(Math.ceil(this.time)) : null
+            temperature
         };
     }
 }
