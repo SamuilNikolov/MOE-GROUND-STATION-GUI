@@ -8,16 +8,21 @@ const path = require('path');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+app.use(express.static(__dirname));
 
 app.get('/', (req, res) => {
     res.sendFile(__dirname + '/index.html');
 });
-
+app.get('/globe', (req, res) => {
+    res.sendFile(path.join(__dirname, 'cesium-globe.html'));
+});
 app.get('/shared.css', (req, res) => {
     res.setHeader('Content-Type', 'text/css');
     res.sendFile(__dirname + '/shared.css');
+}); 
+app.get('/dashboard', (req, res) => {
+    res.sendFile(path.join(__dirname, 'dashboard.html'));
 });
-
 // Adjust the serial port name and baudRate as needed
 const port = new SerialPort({ path: 'COM12', baudRate: 115200 });
 
