@@ -60,14 +60,14 @@ class RocketSimulation {
         this.pitch = 90;  // Start vertical
         this.yaw = 45;    // Launch heading (degrees from north)
         this.roll = 0;
-        this.time = -20;  // Start at T-10 seconds
+        this.time = -3;  // Start at T-10 seconds
         this.stage = 'countdown';  // New countdown stage
         
         // Flight parameters
-        this.countdownTime = 10;  // 10 second countdown
+        this.countdownTime = 3;  // 10 second countdown
         this.maxAltitude = 3000;  // meters
         this.maxVelocity = 300;   // m/s
-        this.burnTime = 10;       // seconds
+        this.burnTime = 15;       // seconds
         this.gravity = 9.81;      // m/s²
         this.deltaTime = 0.2;     // 200ms update interval
         

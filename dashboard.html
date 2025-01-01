@@ -7,7 +7,7 @@
     <script src="offline-libs/socket-io-min.js"></script>
     <script src="offline-libs/chart-min.js"></script>  
     <script src="scripts/audio_beep.js"></script>
-
+    <script src="scripts/apogee_detection.js"></script>
     <style>
         :root {
             --primary: #00ff88;
@@ -199,6 +199,19 @@
             </div>
         </div>
         <div class="card">
+            <h2>Signal Quality</h2>
+            <div class="data-grid">
+                <div class="data-item">
+                    <span>RSSI</span>
+                    <strong id="rssi">-100 dBm</strong>
+                </div>
+                <div class="data-item">
+                    <span>SNR</span>
+                    <strong id="snr">-10 dB</strong>
+                </div>
+            </div>
+        </div>        
+        <div class="card">
             <h2>Acceleration (g)</h2>
             <div class="data-grid">
                 <div class="data-item">
@@ -233,9 +246,17 @@
     </div>
 
     <script>
+        
+  let allAltitudesArray = []; // Store all altitudes for median
+  let descentHistory    = []; // Last 'apogeeDetectN' altitudes
+  const apogeeDetectN = 30;   // Consecutive descending
+  let maxAltitudeReached= 0;  // For bar display
+  let apogeeAnnounced   = false;
           const voiceBtn           = document.getElementById('enable-voice-btn');
           voiceBtn.addEventListener('click', () => {
     beepEnabled = true;
+    audioCtx.resume();
+    window.speechSynthesis.getVoices();
     console.log('Audio beeps enabled by user.');
   });
         const socket = io();
@@ -307,7 +328,7 @@
             const timeLabel = new Date().toLocaleTimeString();
             sampleCount++;
             if(sampleCount % 2 === 0 && beepEnabled){
-        beep(100, data.altitude/4+300, 0.5, 'sine');
+        beep(100, data.altitude+300, 0.5, 'sine');
         console.log('beep')
       }
             altitudeChart.data.labels.push(timeLabel);
@@ -318,6 +339,8 @@
 
             // Update current values with animation
             const currentAltitude = document.getElementById('currentAltitude');
+            
+      checkApogee(parseFloat(currentAltitude.innerText));
             const currentVelocity = document.getElementById('currentVelocity');
             
             currentAltitude.textContent = data.altitude.toFixed(1);
