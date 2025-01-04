@@ -80,7 +80,7 @@ port.on('data', (data) => {
                 // 14-15: int16 yAcc (raw)
                 // 16-17: int16 zAcc (raw)
                 // 18: uint8 temperature
-
+                //
                 const latitude = packet.readFloatLE(0);    // bytes 0-3
                 const longitude = packet.readFloatLE(4);   // bytes 4-7
                 const velocity = packet.readInt16LE(8);    // bytes 8-9
