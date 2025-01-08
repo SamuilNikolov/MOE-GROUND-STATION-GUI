@@ -15,8 +15,49 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 app.get('/globe', (req, res) => {
-    res.sendFile(path.join(__dirname, 'cesium-globe.html'));
+    res.sendFile(path.join(__dirname, 'cesium-replay.html'));
 });
+
+// Define flight stages with their timestamps and colors
+const FLIGHT_STAGES = {
+    PRELAUNCH: {
+        start: new Date('2025-01-07T22:57:00.430Z'),
+        end: new Date('2025-01-07T22:58:10.000Z'),
+        color: '#808080'  // Gray
+    },
+    ASCENT: {
+        start: new Date('2025-01-07T22:58:10.000Z'),
+        end: new Date('2025-01-07T22:58:30.000Z'),
+        color: '#FF0000'  // Red
+    },
+    APOGEE: {
+        start: new Date('2025-01-07T22:58:30.000Z'),
+        end: new Date('2025-01-07T22:59:00.000Z'),
+        color: '#00FF00'  // Green
+    },
+    DESCENT: {
+        start: new Date('2025-01-07T23:01:00.000Z'),
+        end: new Date('2025-01-07T23:02:00.000Z'),
+        color: '#0000FF'  // Blue
+    }
+};
+
+function determineStage(timestamp) {
+    const time = new Date(timestamp);
+    for (const [stage, data] of Object.entries(FLIGHT_STAGES)) {
+        if (time >= data.start && time < data.end) {
+            return {
+                stage: stage,
+                color: data.color
+            };
+        }
+    }
+    return {
+        stage: 'UNKNOWN',
+        color: '#FFFFFF'  // White
+    };
+}
+
 class TelemetryReplay {
     constructor(filePath) {
         this.filePath = filePath;
@@ -31,16 +72,21 @@ class TelemetryReplay {
             fs.createReadStream(this.filePath)
                 .pipe(csv.parse({ columns: true, cast: true }))
                 .on('data', (row) => {
+                    // Determine stage for this data point
+                    const stageInfo = determineStage(row.Timestamp);
+                    
                     this.telemetryData.push({
                         timestamp: new Date(row.Timestamp),
                         lat: parseFloat(row.Latitude),
                         lon: parseFloat(row.Longitude),
                         velocity: parseFloat(row.Velocity),
                         altitude: parseFloat(row.Altitude),
-                        xAcc: parseFloat(row['X_Acc(g)']),  // Updated field name
-                        yAcc: parseFloat(row['Y_Acc(g)']),  // Updated field name
-                        zAcc: parseFloat(row['Z_Acc(g)']),  // Updated field name
-                        temperature: parseFloat(row.Temperature)
+                        xAcc: parseFloat(row['X_Acc(g)']),
+                        yAcc: parseFloat(row['Y_Acc(g)']),
+                        zAcc: parseFloat(row['Z_Acc(g)']),
+                        temperature: parseFloat(row.Temperature),
+                        stage: stageInfo.stage,
+                        stageColor: stageInfo.color
                     });
                 })
                 .on('end', () => {
@@ -94,7 +140,7 @@ class TelemetryReplay {
         // Emit current data
         io.emit('gpsData', currentData);
         console.log(`Emitted data point ${this.currentIndex + 1}/${this.telemetryData.length}:`, 
-                    `Alt: ${currentData.altitude}m, Vel: ${currentData.velocity}m/s`);
+                    `Stage: ${currentData.stage}, Alt: ${currentData.altitude}m`);
 
         // Schedule next emission
         this.currentIndex++;
@@ -117,6 +163,9 @@ const telemetryReplay = new TelemetryReplay('flight_data.csv');
 
 io.on('connection', async (socket) => {
     console.log('Client connected');
+    
+    // Send flight stages configuration to client
+    socket.emit('flightStages', FLIGHT_STAGES);
     
     // Start replay automatically when client connects
     if (!telemetryReplay.isPlaying) {

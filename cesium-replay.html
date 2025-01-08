@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Cesium Rocket Visualization: Multiple Ground Stations</title>
+
+  <!-- Cesium CSS -->
+  <link
+    href="https://cdn.jsdelivr.net/npm/cesium@1.104.0/Build/Cesium/Widgets/widgets.css"
+    rel="stylesheet"
+  />
+
+  <style>
+    /* Full page */
+    html, body {
+      margin: 0; 
+      padding: 0; 
+      width: 100%; 
+      height: 100%;
+      overflow: hidden; 
+      background: #000;
+      font-family: sans-serif;
+    }
+
+    /* The setup form container (centered) */
+    #setupContainer {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      z-index: 1000;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      min-width: 300px;
+    }
+    #groundStationForm {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .station-inputs {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-top: 10px;
+    }
+    #groundStationForm label {
+      font-weight: bold;
+    }
+    #setupContainer button {
+      margin-top: 10px;
+      padding: 8px 16px;
+      background: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #setupContainer button:hover {
+      background: #45a049;
+    }
+    #setupContainer input {
+      padding: 6px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+
+    /* The Cesium globe container */
+    #cesiumContainer {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      display: none; /* hidden until form is submitted */
+    }
+
+    /* Container for mode button + distance slider */
+    #uiContainer {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 999;
+      background: rgba(0,0,0,0.6);
+      color: white;
+      padding: 8px;
+      border-radius: 5px;
+    }
+    #modeBtn {
+      margin-bottom: 8px;
+      cursor: pointer;
+      background: rgba(255,255,255,0.2);
+      color: white;
+      border: 1px solid #ccc;
+      padding: 4px 8px;
+      border-radius: 3px;
+      font-size: 14px;
+    }
+    .sliderContainer {
+      display: flex; 
+      flex-direction: row; 
+      align-items: center;
+      gap: 5px;
+      margin-bottom: 8px;
+    }
+    .sliderContainer label {
+      font-size: 13px; 
+    }
+    .sliderContainer input[type="range"] {
+      width: 130px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 1) Ground Station Setup Form -->
+  <div id="setupContainer">
+    <h2>Ground Station Setup</h2>
+    <form id="groundStationForm">
+      <div>
+        <label>Number of Ground Stations:</label>
+        <input type="number" id="stationCount" min="0" max="10" value="0">
+      </div>
+      <div id="stationInputs"></div>
+      <button type="submit">Start Visualization</button>
+    </form>
+  </div>
+
+  <!-- 2) Cesium globe -->
+  <div id="cesiumContainer"></div>
+
+  <!-- 3) UI Container: camera mode button + distance/pitch sliders -->
+  <div id="uiContainer" style="display: none;">
+    <button id="modeBtn">Mode: FREE</button>
+    <div class="sliderContainer">
+      <label for="distanceSlider">Distance:</label>
+      <input id="distanceSlider" type="range" min="100" max="10000" step="100" value="5000">
+      <label for="pitchSlider">Angle:</label>
+      <input id="pitchSlider" type="range" min="0" max="85" step="0.1" value="30">
+    </div>
+  </div>
+
+  <!-- Socket.IO (adjust if needed) -->
+  <script src="/socket.io/socket.io.js"></script>
+  <!-- Cesium JS -->
+  <script src="https://cdn.jsdelivr.net/npm/cesium@1.104.0/Build/Cesium/Cesium.js"></script>
+
+  <script>
+    /************************************************************************
+     *  PART A: Ground Station Form Handling
+     ************************************************************************/
+    const stationCount = document.getElementById('stationCount');
+    const stationInputs = document.getElementById('stationInputs');
+    const setupContainer = document.getElementById('setupContainer');
+    const cesiumContainer = document.getElementById('cesiumContainer');
+    const uiContainer = document.getElementById('uiContainer');
+
+    function updateStationInputs() {
+      stationInputs.innerHTML = '';
+      const count = parseInt(stationCount.value);
+      
+      for(let i = 0; i < count; i++) {
+        const div = document.createElement('div');
+        div.className = 'station-inputs';
+        div.innerHTML = `
+          <label>Station ${i + 1}:</label>
+          <input type="text" class="station-lat" placeholder="Latitude" required>
+          <input type="text" class="station-lon" placeholder="Longitude" required>
+          <input type="text" class="station-name" placeholder="Station Name" required>
+        `;
+        stationInputs.appendChild(div);
+      }
+    }
+
+    stationCount.addEventListener('change', updateStationInputs);
+    updateStationInputs(); // initial station input fields
+
+    document.getElementById('groundStationForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const stations = [];
+      const lats  = document.querySelectorAll('.station-lat');
+      const lons  = document.querySelectorAll('.station-lon');
+      const names = document.querySelectorAll('.station-name');
+      
+      for(let i = 0; i < lats.length; i++) {
+        const lat = parseFloat(lats[i].value);
+        const lon = parseFloat(lons[i].value);
+        const name = names[i].value.trim();
+        
+        if(isNaN(lat) || isNaN(lon) || !name) {
+          alert('Please enter valid coordinates and name for all stations.');
+          return;
+        }
+        stations.push({ lat, lon, name });
+      }
+
+      // Hide the form, show Cesium
+      setupContainer.style.display = 'none';
+      cesiumContainer.style.display = 'block';
+      uiContainer.style.display = 'block';
+
+      // Start the main viewer logic
+      initializeCesium(stations);
+    });
+
+    /************************************************************************
+     *  PART B: Main Visualization
+     ************************************************************************/
+    function initializeCesium(groundStations) {
+      Cesium.Ion.defaultAccessToken = 
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.' +
+        'eyJqdGkiOiI5NDQyNDE4My1kNjkxLTQ0MDUtOWEyNC1mOTM5MTA3ZjNkNmYiLCJpZCI6MjY0Njk2LCJpYXQiOjE3MzUwNjk4OTZ9.' +
+        '_NYeNPDjESMzfcYTEBkiR-nnPKCCDNYdt2skAjllwdM';
+      // Create the viewer
+      const viewer = new Cesium.Viewer('cesiumContainer', {
+        shouldAnimate: true,
+        infoBox: false,
+        selectionIndicator: false,
+        timeline: false,
+        animation: false,
+        terrainProvider: Cesium.createWorldTerrain({
+          requestVertexNormals: true,
+          requestWaterMask: true
+        })
+      });
+      
+      viewer.scene.globe.enableLighting = true;
+      viewer.scene.globe.depthTestAgainstTerrain = true;
+
+      // Sync the viewer's clock to "now"
+      const startTime = Cesium.JulianDate.now();
+      viewer.clock.startTime = startTime.clone();
+      viewer.clock.currentTime = startTime.clone();
+      viewer.clock.shouldAnimate = true; // animate the scene
+      viewer.clock.multiplier = 1;
+
+      /***********************************************
+       * 1) Add Ground Stations (if any)
+       ***********************************************/
+       let stationEntities = [];
+       if(groundStations.length>0){
+       stationEntities = groundStations.map(station => {
+        const position = Cesium.Cartesian3.fromDegrees(station.lon, station.lat, 0);
+        return viewer.entities.add({
+          name: station.name,
+          position: position,
+          point: {
+            pixelSize: 8,
+            color: Cesium.Color.GREEN,
+            outlineColor: Cesium.Color.WHITE,
+            outlineWidth: 1
+          },
+          label: {
+            text: station.name,
+            font: '18px sans-serif',
+            fillColor: Cesium.Color.BLACK,
+            showBackground: true,
+            backgroundColor: Cesium.Color.WHITE,
+            pixelOffset: new Cesium.Cartesian2(110, 0),
+            heightReference: Cesium.HeightReference.NONE
+          }
+        });
+      });
+    }
+    /***********************************************
+ * 2) Rocket Entity and Path Segments
+ ***********************************************/
+    const rocketPosition = new Cesium.SampledPositionProperty();
+// Enable forward extrapolation so if no data arrives momentarily, the rocket doesn't vanish
+rocketPosition.forwardExtrapolationType = Cesium.ExtrapolationType.HOLD;
+rocketPosition.forwardExtrapolationDuration = 3600; // hold up to 1 hour
+
+// We'll keep altitude in a single variable
+let rocketAltitude = 0;
+let currentStage = null;
+let lastPosition = null;
+let pathSegments = new Map(); // Store path entities by stage
+
+const rocketEntity = viewer.entities.add({
+  name: 'Rocket',
+  position: rocketPosition,
+  // This calculates orientation from velocity, so the rocket "faces" the direction it's moving
+  orientation: new Cesium.VelocityOrientationProperty(rocketPosition),
+  point: {
+    pixelSize: 10,
+    color: Cesium.Color.RED,
+    outlineColor: Cesium.Color.WHITE,
+    outlineWidth: 1
+  },
+  label: {
+    text: new Cesium.CallbackProperty(() => {
+      return `SPECTRE -> ${rocketAltitude.toFixed(0)} m`;
+    }, false),
+    font: '18px sans-serif',
+    fillColor: Cesium.Color.BLACK,
+    showBackground: true,
+    backgroundColor: Cesium.Color.WHITE,
+    pixelOffset: new Cesium.Cartesian2(110, 0),
+    heightReference: Cesium.HeightReference.NONE
+  }
+});
+      /***********************************************
+       * 3) Polylines + Distance Labels
+       ***********************************************/
+      
+      groundStations.forEach((station, idx) => {
+        const stationEntity = stationEntities[idx];
+
+        // Dynamic polyline from station to rocket
+        viewer.entities.add({
+          polyline: {
+            positions: new Cesium.CallbackProperty(() => {
+              // We rely on forwardExtrapolation so rocket doesn't vanish
+              const rocketCartPos = rocketPosition.getValue(viewer.clock.currentTime);
+              if (!rocketCartPos) return [];
+              const stationPosNow = stationEntity.position.getValue(viewer.clock.currentTime);
+              if (!stationPosNow) return [];
+              return [stationPosNow, rocketCartPos];
+            }, false),
+            width: 2,
+            material: Cesium.Color.YELLOW
+          }
+        });
+
+        // Distance label at midpoint
+        viewer.entities.add({
+          position: new Cesium.CallbackProperty(() => {
+            const rocketCartPos = rocketPosition.getValue(viewer.clock.currentTime);
+            if (!rocketCartPos) return Cesium.Cartesian3.ZERO;
+            const stationPosNow = stationEntity.position.getValue(viewer.clock.currentTime);
+            if (!stationPosNow) return Cesium.Cartesian3.ZERO;
+            return Cesium.Cartesian3.midpoint(stationPosNow, rocketCartPos, new Cesium.Cartesian3());
+          }, false),
+          label: {
+            text: new Cesium.CallbackProperty(() => {
+              const rocketCartPos = rocketPosition.getValue(viewer.clock.currentTime);
+              if (!rocketCartPos) return 'No Data';
+              const stationPosNow = stationEntity.position.getValue(viewer.clock.currentTime);
+              if (!stationPosNow) return 'No Data';
+              const dist3D = Cesium.Cartesian3.distance(stationPosNow, rocketCartPos);
+              return dist3D ? (dist3D / 1000).toFixed(2) + ' km' : 'No Data';
+            }, false),
+            font: '14px sans-serif',
+            fillColor: Cesium.Color.BLACK,
+            showBackground: true,
+            backgroundColor: Cesium.Color.WHITE,
+            pixelOffset: new Cesium.Cartesian2(0, 20),
+            heightReference: Cesium.HeightReference.NONE
+          }
+        });
+      });
+      /***********************************************
+     * 4) Socket.IO for real-time rocket data
+     ***********************************************/
+    let flightStages = null;
+
+    // Add stage indicator to UI container
+    const stageIndicator = document.createElement('div');
+    stageIndicator.style.marginTop = '8px';
+    stageIndicator.style.fontSize = '14px';
+    document.getElementById('uiContainer').appendChild(stageIndicator);
+
+    const socket = io();
+
+    socket.on('flightStages', (stages) => {
+      flightStages = stages;
+      console.log('Received flight stages configuration:', stages);
+      
+      // Initialize path segments for each stage
+      stages.forEach(stage => {
+        createPathSegment(stage.name, stage.color);
+      });
+    });
+
+    function createPathSegment(stageName, color) {
+  if (!pathSegments.has(stageName)) {
+    const pathEntity = viewer.entities.add({
+      polyline: {
+        positions: [],
+        width: 3,
+        material: new Cesium.Color.fromCssColorString(color),
+        clampToGround: false
+      }
+    });
+    pathSegments.set(stageName, {
+      entity: pathEntity,
+      positions: []
+    });
+  }
+  return pathSegments.get(stageName);
+}
+
+socket.on('gpsData', (data) => {
+  const { lat, lon, altitude, stage, stageColor } = data;
+  
+  if (lat != null && lon != null && altitude != null) {
+    rocketAltitude = altitude;
+    
+    // Update stage indicator
+    stageIndicator.textContent = `Stage: ${stage}`;
+    stageIndicator.style.color = stageColor;
+
+    // Get current position
+    const currentTime = viewer.clock.currentTime;
+    const cartPos = Cesium.Cartesian3.fromDegrees(lon, lat, altitude);
+
+    // Update rocket position
+    rocketPosition.addSample(currentTime, cartPos);
+
+    // Handle path segment for current stage
+    if (!pathSegments.has(stage)) {
+      createPathSegment(stage, stageColor);
+    }
+
+    const pathSegment = pathSegments.get(stage);
+    
+    // Add new position to the array
+    pathSegment.positions.push(cartPos);
+    
+    // Update the polyline positions directly
+    pathSegment.entity.polyline.positions = pathSegment.positions;
+
+    // Update rocket point color
+    rocketEntity.point.color = new Cesium.Color.fromCssColorString(stageColor);
+    
+    lastPosition = cartPos;
+    currentStage = stage;
+
+  }
+});
+      /***********************************************
+       * 5) 3 Camera Modes: LOCKED, FREE, CIRCLE
+       ***********************************************/
+      let modeBtn  = document.getElementById('modeBtn');
+      let mode     = 'FREE'; 
+      function updateModeLabel() {
+        modeBtn.innerText = `Mode: ${mode}`;
+      }
+
+      // cycle modes on button
+      modeBtn.addEventListener('click', () => {
+
+        if (mode === 'LOCKED') {
+          mode = 'FREE';
+        } else if (mode === 'FREE') {
+          mode = 'CIRCLE';
+        } else {
+          mode = 'LOCKED';
+        }
+        applyCameraMode();
+        updateModeLabel();
+      });
+
+      // or press M
+      window.addEventListener('keydown', (e) => {
+        if(e.key.toLowerCase() === 'm'){
+          if (mode === 'LOCKED') {
+            mode = 'FREE';
+          } else if (mode === 'FREE') {
+            mode = 'CIRCLE';
+          } else {
+            mode = 'LOCKED';
+          }
+          applyCameraMode();
+          updateModeLabel();
+        }
+      });
+
+      function applyCameraMode() {
+        if (mode === 'LOCKED') {
+          viewer.trackedEntity = rocketEntity;
+        } else {
+          viewer.trackedEntity = undefined;
+        }
+      }
+
+      /***********************************************
+       * 6) Distance + Pitch Sliders for Circle Mode
+       ***********************************************/
+      let circleHeading = 0; 
+      const pitchSlider = document.getElementById('pitchSlider');
+      let pitchAngle = parseFloat(pitchSlider.value);
+      let circlePitch = Cesium.Math.toRadians(pitchAngle * -1);
+
+      pitchSlider.addEventListener('input', () => {
+        pitchAngle = parseFloat(pitchSlider.value);
+        circlePitch = Cesium.Math.toRadians(pitchAngle * -1);
+      });
+
+      const distanceSlider = document.getElementById('distanceSlider');
+      let circleDistance = parseFloat(distanceSlider.value);
+
+      distanceSlider.addEventListener('input', () => {
+        circleDistance = parseFloat(distanceSlider.value);
+      });
+
+      // orbit logic in postRender if mode=CIRCLE
+      viewer.scene.postRender.addEventListener(() => {
+        if (mode !== 'CIRCLE') return;
+        const rocketCartPos = rocketPosition.getValue(viewer.clock.currentTime);
+        if (!rocketCartPos) return; // might be no data yet
+        circleHeading += 0.001; 
+        const headingPitchRange = new Cesium.HeadingPitchRange(
+          circleHeading,
+          circlePitch,
+          circleDistance
+        );
+        viewer.scene.camera.lookAt(rocketCartPos, headingPitchRange);
+      });
+
+      console.log('Cesium initialized — rocket + label + lines stable, no flicker!');
+    }
+ </script>
+</body>
+</html>
