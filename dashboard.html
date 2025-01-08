@@ -327,7 +327,7 @@
             // Update charts (keeping all data points)
             const timeLabel = new Date().toLocaleTimeString();
             sampleCount++;
-            if(sampleCount % 5 === 0 && beepEnabled){
+            if(sampleCount % 1 === 0 && beepEnabled){
         beep(100, data.altitude+300, 0.5, 'sine');
         console.log('beep')
       }
