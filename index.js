@@ -8,6 +8,8 @@ const path = require('path');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+
+let linesCount = 0;
 app.use(express.static(__dirname));
 
 app.get('/', (req, res) => {
@@ -130,7 +132,12 @@ port.on('data', (data) => {
                 fs.appendFile(csvFilePath, row + '\n', (err) => {
                     if (err) console.error('Error writing to CSV:', err);
                 });
-
+                
+    linesCount++;
+                io.emit('logInfo', {
+                    fileName: csvFileName,
+                    lines: linesCount
+                });
             } catch (err) {
                 console.error('Error parsing packet:', err.message);
             }

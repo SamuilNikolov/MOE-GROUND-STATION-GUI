@@ -116,7 +116,6 @@
   });
 
   const loggingStatus      = document.getElementById('logging-status');
-
   /************************************************
    *       Create Ticks on Bars
    ************************************************/
@@ -178,7 +177,7 @@
       updateAccelerationArrows(xAcc,yAcc,zAcc);
 
       // Telemetry beep every 2 samples
-      if(sampleCount % 2 === 0){
+      if(sampleCount % 5 === 0){
         beep(100, altitude/2+300, 0.5, 'sine');
       }
     }

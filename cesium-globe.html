@@ -218,8 +218,18 @@
         selectionIndicator: false,
         timeline: false,
         animation: false,
-        terrainProvider: new Cesium.EllipsoidTerrainProvider()
+        terrainProvider: Cesium.createWorldTerrain({
+          requestVertexNormals: true,
+          requestWaterMask: true
+        })
       });
+      // After creating the viewer
+const weatherSystem = addWeatherVisualization(viewer);
+
+// Optional: Set initial weather for a location
+weatherSystem.updateWeather(0, 0); // Update with your default coordinates
+      viewer.scene.globe.enableLighting = true;
+      viewer.scene.globe.depthTestAgainstTerrain = true;
 
       // Sync the viewer's clock to "now"
       const startTime = Cesium.JulianDate.now();
@@ -363,7 +373,7 @@
 
           // sample the new position at the current viewer time
           const currentTime = viewer.clock.currentTime;
-          const cartPos = Cesium.Cartesian3.fromDegrees(lon, lat, altitude);
+          const cartPos = Cesium.Cartesian3.fromDegrees(lon, lat, altitude-30);
           rocketPosition.addSample(currentTime, cartPos);
 
         }
@@ -451,6 +461,123 @@
 
       console.log('Cesium initialized — rocket + label + lines stable, no flicker!');
     }
+
+
+    function addWeatherVisualization(viewer) {
+  // 1. Enable fog and atmosphere effects
+  viewer.scene.globe.enableLighting = true;
+  viewer.scene.fog.enabled = true;
+  viewer.scene.fog.density = 0.0001;
+  viewer.scene.fog.minimumBrightness = 0.1;
+  viewer.scene.skyAtmosphere.show = true;
+
+  // 2. Add Cloud Layer
+  const cloudCollection = viewer.scene.primitives.add(
+    new Cesium.CloudCollection({
+      noiseDetail: 16.0,
+      noiseOffset: new Cesium.Cartesian3(0, 0, 0),
+      bottomAltitude: 1500.0,
+      topAltitude: 8000.0,
+      show: true,
+      maximumCloudSpace: 1.0,
+      clippingPlanes: null,
+    })
+  );
+
+  // 3. Create dynamic clouds with variation
+  function addRandomCloud(lat, lon) {
+    const cloudHeight = 2000 + Math.random() * 4000;
+    const cloudSize = 10000 + Math.random() * 20000;
+    
+    cloudCollection.add({
+      position: Cesium.Cartesian3.fromDegrees(lon, lat, cloudHeight),
+      scale: new Cesium.Cartesian2(cloudSize, cloudSize),
+      maximumSize: new Cesium.Cartesian3(cloudSize, cloudSize, 3000),
+      slice: Math.random(),
+      brightness: 0.8 + Math.random() * 0.2,
+      color: Cesium.Color.WHITE.withAlpha(0.8)
+    });
+  }
+
+  // 4. Add weather data fetching
+  async function fetchWeatherData(lat, lon) {
+    try {
+      const response = await fetch(
+        `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=d478af413b0f2855b2308b87beae60d8`
+      );
+      return await response.json();
+    } catch (error) {
+      console.error('Error fetching weather data:', error);
+      return null;
+    }
+  }
+
+  // 5. Update scene based on weather
+  async function updateWeather(lat, lon) {
+    const weather = await fetchWeatherData(lat, lon);
+    if (!weather) return;
+
+    // Adjust fog based on visibility
+    if (weather.visibility) {
+      viewer.scene.fog.density = Math.max(0.0001, 1 / weather.visibility);
+    }
+
+    // Adjust cloud coverage based on weather conditions
+    const cloudCover = weather.clouds?.all || 0; // percentage
+    const cloudCount = Math.floor((cloudCover / 100) * 20); // max 20 clouds
+
+    // Clear existing clouds
+    cloudCollection.removeAll();
+
+    // Add new clouds based on weather
+    for (let i = 0; i < cloudCount; i++) {
+      const offsetLat = lat + (Math.random() - 0.5) * 2; // ±1 degree
+      const offsetLon = lon + (Math.random() - 0.5) * 2;
+      addRandomCloud(offsetLat, offsetLon);
+    }
+  }
+
+  // 6. Hook into rocket data to update weather
+  const socket = viewer.socket || io();
+  socket.on('gpsData', (data) => {
+    if (data.lat && data.lon) {
+      updateWeather(data.lat, data.lon);
+    }
+  });
+
+  // 7. Add weather configuration UI
+  const weatherDiv = document.createElement('div');
+  weatherDiv.innerHTML = `
+    <div style="position:absolute;top:60px;left:10px;background:rgba(0,0,0,0.6);
+                color:white;padding:8px;border-radius:5px;z-index:999;">
+      <label>Cloud Density: 
+        <input type="range" id="cloudDensity" min="0" max="100" value="50">
+      </label>
+      <br>
+      <label>Fog Density: 
+        <input type="range" id="fogDensity" min="0" max="100" value="50">
+      </label>
+    </div>
+  `;
+  document.body.appendChild(weatherDiv);
+
+  // 8. Hook up UI controls
+  document.getElementById('cloudDensity').addEventListener('input', (e) => {
+    const density = e.target.value / 100;
+    cloudCollection.maximumCloudSpace = density;
+  });
+
+  document.getElementById('fogDensity').addEventListener('input', (e) => {
+    const density = (e.target.value / 100) * 0.0002;
+    viewer.scene.fog.density = density;
+  });
+
+  return {
+    cloudCollection,
+    updateWeather,
+    fetchWeatherData
+  };
+}
   </script>
 </body>
 </html>

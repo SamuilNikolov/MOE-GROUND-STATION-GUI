@@ -60,7 +60,7 @@ class RocketSimulation {
         this.pitch = 90;  // Start vertical
         this.yaw = 45;    // Launch heading (degrees from north)
         this.roll = 0;
-        this.time = -3;  // Start at T-10 seconds
+        this.time = -30;  // Start at T-10 seconds
         this.stage = 'countdown';  // New countdown stage
         
         // Flight parameters
@@ -240,7 +240,7 @@ class RocketSimulation {
 }
 
 // Initialize simulation with launch coordinates
-const simulation = new RocketSimulation(29.210815, -81.022835);
+const simulation = new RocketSimulation(29.510815, -81.022835);
 const START_TIME = Date.now(); // Store simulation start time
 
 // Update loop
