@@ -76,7 +76,7 @@ class TelemetryReplay {
                     const stageInfo = determineStage(row.Timestamp);
                     
                     this.telemetryData.push({
-                        timestamp: new Date(row.Timestamp),
+                        timestamp: new Date(row.SystemTimestamp),
                         lat: parseFloat(row.Latitude),
                         lon: parseFloat(row.Longitude),
                         velocity: parseFloat(row.Velocity),
@@ -149,7 +149,7 @@ class TelemetryReplay {
 }
 
 // Create telemetry replay instance
-const telemetryReplay = new TelemetryReplay('flight_data.csv');
+const telemetryReplay = new TelemetryReplay('data_log_2025-01-09T02-56-21-309Z.csv');
 
 // Initialize data loading and replay on server start
 (async () => {
