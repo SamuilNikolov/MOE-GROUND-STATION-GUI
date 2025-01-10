@@ -365,7 +365,79 @@
         const { lat, lon, altitude } = data;
         if (lat != null && lon != null && altitude != null) {
           // store altitude
-          rocketAltitude = altitude;
+            rocketAltitude = altitude;
+
+            // Fake GPGSV satellite data simulation
+            const satellites = [
+            { id: 1, lat: lat + 2, lon: lon + 2, alt: 10200000 },
+            { id: 2, lat: lat - 1, lon: lon + 3, alt: 10200000 },
+            { 
+              id: 3, 
+              lat: lat + 3 * Math.cos(Date.now() / 1000), // Orbital motion
+              lon: lon - 2 * Math.sin(Date.now() / 1000), // Orbital motion
+              alt: 10200000 + Math.sin(Date.now() / 5000) * 100 // Slight altitude variation
+            },
+            { id: 4, lat: lat - 2, lon: lon - 1, alt: 10200000 }
+            ];
+
+            // Update or create satellite entities
+            satellites.forEach(sat => {
+            // Simulate GPGSV data string
+            const gpgsvData = `$GPGSV,3,1,12,${lat + 2},${lon + 2},10200000,1,${lat - 1},${lon + 3},10200000,2,${lat + 3 * Math.cos(Date.now() / 1000)},${lon - 2 * Math.sin(Date.now() / 1000)},${10200000 + Math.sin(Date.now() / 5000) * 100},3,${lat - 2},${lon - 1},10200000,4*75`;
+
+            // Parse GPGSV data
+            const satellites = [];
+            const parts = gpgsvData.split(',');
+            const numSats = parseInt(parts[3]);
+
+            for (let i = 0; i < numSats; i++) {
+              const baseIndex = 4 + (i * 4);
+              satellites.push({
+                id: i + 1,
+                lat: parseFloat(parts[baseIndex]),
+                lon: parseFloat(parts[baseIndex + 1]), 
+                alt: parseFloat(parts[baseIndex + 2])
+              });
+            }
+
+            let satEntity = viewer.entities.getById(`sat-${sat.id}`);
+            const satPos = Cesium.Cartesian3.fromDegrees(sat.lon, sat.lat, sat.alt);
+
+            if (!satEntity) {
+              // Create new satellite entity
+              satEntity = viewer.entities.add({
+              id: `sat-${sat.id}`,
+              position: satPos,
+              point: {
+                pixelSize: 5,
+                color: Cesium.Color.BLUE
+              },
+              label: {
+                text: `GPS-${sat.id}`,
+                font: '12px sans-serif',
+                pixelOffset: new Cesium.Cartesian2(10, 0)
+              }
+              });
+
+              // Add line to rocket
+              viewer.entities.add({
+              polyline: {
+                positions: new Cesium.CallbackProperty(() => {
+                const rocketPos = rocketPosition.getValue(viewer.clock.currentTime);
+                const satPos = satEntity.position.getValue(viewer.clock.currentTime);
+                return [satPos, rocketPos];
+                }, false),
+                width: 1,
+                material: new Cesium.PolylineDashMaterialProperty({
+                color: Cesium.Color.CYAN.withAlpha(0.5)
+                })
+              }
+              });
+            } else {
+              // Update existing satellite position
+              satEntity.position = satPos;
+            }
+            });
 
           // sample the new position at the current viewer time
           const currentTime = viewer.clock.currentTime;
