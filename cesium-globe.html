@@ -369,15 +369,15 @@
 
             // Fake GPGSV satellite data simulation
             const satellites = [
-            { id: 1, lat: lat + 2, lon: lon + 2, alt: 10200000 },
-            { id: 2, lat: lat - 1, lon: lon + 3, alt: 10200000 },
-            { 
-              id: 3, 
-              lat: lat + 3 * Math.cos(Date.now() / 1000), // Orbital motion
-              lon: lon - 2 * Math.sin(Date.now() / 1000), // Orbital motion
-              alt: 10200000 + Math.sin(Date.now() / 5000) * 100 // Slight altitude variation
-            },
-            { id: 4, lat: lat - 2, lon: lon - 1, alt: 10200000 }
+            //{ id: 1, lat: lat + 2, lon: lon + 2, alt: 10200000 },
+            //{ id: 2, lat: lat - 1, lon: lon + 3, alt: 10200000 },
+           // { 
+             // id: 3, 
+             // lat: lat + 3 * Math.cos(Date.now() / 1000), // Orbital motion
+             // lon: lon - 2 * Math.sin(Date.now() / 1000), // Orbital motion
+             // alt: 10200000 + Math.sin(Date.now() / 5000) * 100 // Slight altitude variation
+           // },
+            //{ id: 4, lat: lat - 2, lon: lon - 1, alt: 10200000 }
             ];
 
             // Update or create satellite entities

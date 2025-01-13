@@ -15,7 +15,7 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 app.get('/globe', (req, res) => {
-    res.sendFile(path.join(__dirname, 'cesium-replay.html'));
+    res.sendFile(path.join(__dirname, 'cesium-globe.html'));
 });
 
 // Define flight stages with their timestamps and colors
@@ -70,20 +70,19 @@ class TelemetryReplay {
         return new Promise((resolve, reject) => {
             console.log('Loading data from:', this.filePath);
             fs.createReadStream(this.filePath)
-                .pipe(csv.parse({ columns: true, cast: true }))
+                .pipe(csv.parse({ columns: true }))
                 .on('data', (row) => {
                     // Determine stage for this data point
                     const stageInfo = determineStage(row.Timestamp);
-                    
                     this.telemetryData.push({
-                        timestamp: new Date(row.SystemTimestamp),
+                        timestamp: parseFloat(row.Timestamp),
                         lat: parseFloat(row.Latitude),
                         lon: parseFloat(row.Longitude),
                         velocity: parseFloat(row.Velocity),
-                        altitude: parseFloat(row.Altitude),
-                        xAcc: parseFloat(row['X_Acc(g)']),
-                        yAcc: parseFloat(row['Y_Acc(g)']),
-                        zAcc: parseFloat(row['Z_Acc(g)']),
+                        altitude: parseFloat(row.Altitude)-106,
+                        xAcc: parseFloat(row.AccelX)/1000,
+                        yAcc: parseFloat(row.AccelY)/1000,
+                        zAcc: parseFloat(row.AccelZ)/1000,
                         temperature: parseFloat(row.Temperature),
                         stage: stageInfo.stage,
                         stageColor: stageInfo.color
@@ -134,9 +133,9 @@ class TelemetryReplay {
         }
 
         // Calculate delay until next emission
-        const timeDiff = nextData.timestamp - currentData.timestamp;
+        const timeDiff = (nextData.timestamp - currentData.timestamp);
         const delayMs = timeDiff.valueOf();
-
+        console.log(nextData.altitude);
         // Emit current data
         io.emit('gpsData', currentData);
         console.log(`Emitted data point ${this.currentIndex + 1}/${this.telemetryData.length}:`, 
@@ -149,7 +148,7 @@ class TelemetryReplay {
 }
 
 // Create telemetry replay instance
-const telemetryReplay = new TelemetryReplay('data_log_2025-01-09T02-56-21-309Z.csv');
+const telemetryReplay = new TelemetryReplay('data_test_integrated.csv');
 
 // Initialize data loading and replay on server start
 (async () => {
