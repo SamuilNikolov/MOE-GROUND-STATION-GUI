@@ -8,7 +8,8 @@ const csv = require('csv-parse');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
-
+let accurateGPSLat = 0;
+let accurateGPSLon = 0;
 app.use(express.static(__dirname));
 
 app.get('/', (req, res) => {
@@ -72,14 +73,18 @@ class TelemetryReplay {
             fs.createReadStream(this.filePath)
                 .pipe(csv.parse({ columns: true }))
                 .on('data', (row) => {
+                    if(row.Latitude != 0 && row.Longitude != 0){
+                        accurateGPSLat = row.Latitude;
+                        accurateGPSLon = row.Longitude;
+                    }
                     // Determine stage for this data point
                     const stageInfo = determineStage(row.Timestamp);
                     this.telemetryData.push({
                         timestamp: parseFloat(row.Timestamp),
-                        lat: parseFloat(row.Latitude),
-                        lon: parseFloat(row.Longitude),
+                        lat: parseFloat(accurateGPSLat),
+                        lon: parseFloat(accurateGPSLon),
                         velocity: parseFloat(row.Velocity),
-                        altitude: parseFloat(row.Altitude)-106,
+                        altitude: parseFloat(row.Altitude)-8,
                         xAcc: parseFloat(row.AccelX)/1000,
                         yAcc: parseFloat(row.AccelY)/1000,
                         zAcc: parseFloat(row.AccelZ)/1000,
@@ -105,10 +110,17 @@ class TelemetryReplay {
             return;
         }
 
-        console.log('Starting replay...');
-        this.isPlaying = true;
-        this.currentIndex = 0;
-        this.emitNext();
+        console.log('Starting replay in 7 seconds...');
+        io.emit('countdown', { message: 'Simulation starting in 7 seconds...' });
+        
+        // Add 7-second delay before starting
+        setTimeout(() => {
+            this.isPlaying = true;
+            this.currentIndex = 0;
+            console.log('Starting replay now...');
+            io.emit('countdown', { message: 'Simulation starting now!' });
+            this.emitNext();
+        }, 7000);
     }
 
     stop() {
@@ -148,7 +160,7 @@ class TelemetryReplay {
 }
 
 // Create telemetry replay instance
-const telemetryReplay = new TelemetryReplay('data_test_integrated.csv');
+const telemetryReplay = new TelemetryReplay('flight-only.csv');
 
 // Initialize data loading and replay on server start
 (async () => {
