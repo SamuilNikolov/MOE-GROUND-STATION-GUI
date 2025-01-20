@@ -10,41 +10,60 @@ const server = http.createServer(app);
 const io = new Server(server);
 let accurateGPSLat = 0;
 let accurateGPSLon = 0;
-app.use(express.static(__dirname));
 
+// Express setup
+app.use(express.static(__dirname));
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 app.get('/globe', (req, res) => {
-    res.sendFile(path.join(__dirname, 'cesium-globe.html'));
+    res.sendFile(path.join(__dirname, 'cesium-replay.html'));
+});
+app.get('/shared.css', (req, res) => {
+    res.setHeader('Content-Type', 'text/css');
+    res.sendFile(__dirname + '/shared.css');
+}); 
+app.get('/dashboard', (req, res) => {
+    res.sendFile(path.join(__dirname, 'dashboard.html'));
 });
 
-// Define flight stages with their timestamps and colors
+// Flight stages definition with millisecond timestamps
 const FLIGHT_STAGES = {
     PRELAUNCH: {
-        start: new Date('2025-01-07T22:57:00.430Z'),
-        end: new Date('2025-01-07T22:58:10.000Z'),
-        color: '#808080'  // Gray
+        start: 0, // 2025-01-07T22:57:00.430Z in milliseconds
+        end: 1241127,   // 2025-01-07T22:58:10.000Z in milliseconds
+        color: '#ffffff'
     },
-    ASCENT: {
-        start: new Date('2025-01-07T22:58:10.000Z'),
-        end: new Date('2025-01-07T22:58:30.000Z'),
-        color: '#FF0000'  // Red
+    ASCENT_BURN: {
+        start: 1241128, // 2025-01-07T22:58:10.000Z in milliseconds
+        end: 1244828,   // 2025-01-07T22:58:30.000Z in milliseconds
+        color: '#ff0000'
+    },
+    ASCENT_COAST: {
+        start: 1244829, // 2025-01-07T22:58:10.000Z in milliseconds
+        end: 1260278,   // 2025-01-07T22:58:30.000Z in milliseconds
+        color: '#009dff'
     },
     APOGEE: {
-        start: new Date('2025-01-07T22:58:30.000Z'),
-        end: new Date('2025-01-07T22:59:00.000Z'),
-        color: '#00FF00'  // Green
+        start: 1260279, // 2025-01-07T22:58:30.000Z in milliseconds
+        end: 1262983,   // 2025-01-07T22:59:00.000Z in milliseconds
+        color: '#62fc03'
     },
-    DESCENT: {
-        start: new Date('2025-01-07T23:01:00.000Z'),
-        end: new Date('2025-01-07T23:02:00.000Z'),
-        color: '#0000FF'  // Blue
+    DESCENT_DROGUE: {
+        start: 1262984, // 2025-01-07T23:01:00.000Z in milliseconds
+        end: 1358240,   // 2025-01-07T23:02:00.000Z in milliseconds
+        color: '#ff8400'
+    },
+    DESCENT_MAIN: {
+        start: 1358241, // 2025-01-07T23:01:00.000Z in milliseconds
+        end: 999999999999,   // 2025-01-07T23:02:00.000Z in milliseconds
+        color: '#ff00bf'
     }
 };
 
 function determineStage(timestamp) {
-    const time = new Date(timestamp);
+    // Convert timestamp to number if it's not already
+    const time = Number(timestamp);
     for (const [stage, data] of Object.entries(FLIGHT_STAGES)) {
         if (time >= data.start && time < data.end) {
             return {
@@ -55,7 +74,7 @@ function determineStage(timestamp) {
     }
     return {
         stage: 'UNKNOWN',
-        color: '#FFFFFF'  // White
+        color: '#FFFFFF'
     };
 }
 
@@ -65,6 +84,8 @@ class TelemetryReplay {
         this.telemetryData = [];
         this.currentIndex = 0;
         this.isPlaying = false;
+        this.replayStartTime = null;
+        this.firstDataTimestamp = null;
     }
 
     async loadData() {
@@ -73,21 +94,20 @@ class TelemetryReplay {
             fs.createReadStream(this.filePath)
                 .pipe(csv.parse({ columns: true }))
                 .on('data', (row) => {
-                    if(row.Latitude != 0 && row.Longitude != 0){
+                    if(row.Latitude != 0 && row.Longitude != 0) {
                         accurateGPSLat = row.Latitude;
                         accurateGPSLon = row.Longitude;
                     }
-                    // Determine stage for this data point
                     const stageInfo = determineStage(row.Timestamp);
                     this.telemetryData.push({
-                        timestamp: parseFloat(row.Timestamp),
+                        timestamp: Number(row.Timestamp), // Ensure timestamp is a number
                         lat: parseFloat(accurateGPSLat),
                         lon: parseFloat(accurateGPSLon),
                         velocity: parseFloat(row.Velocity),
-                        altitude: parseFloat(row.Altitude)-8,
-                        xAcc: parseFloat(row.AccelX)/1000,
-                        yAcc: parseFloat(row.AccelY)/1000,
-                        zAcc: parseFloat(row.AccelZ)/1000,
+                        altitude: parseFloat(row.Altitude),
+                        xAcc: parseFloat(row.xAcc),
+                        yAcc: parseFloat(row.yAcc),
+                        zAcc: parseFloat(row.zAcc),
                         temperature: parseFloat(row.Temperature),
                         stage: stageInfo.stage,
                         stageColor: stageInfo.color
@@ -113,14 +133,15 @@ class TelemetryReplay {
         console.log('Starting replay in 7 seconds...');
         io.emit('countdown', { message: 'Simulation starting in 7 seconds...' });
         
-        // Add 7-second delay before starting
         setTimeout(() => {
             this.isPlaying = true;
             this.currentIndex = 0;
+            this.replayStartTime = Date.now();
+            this.firstDataTimestamp = this.telemetryData[0].timestamp;
             console.log('Starting replay now...');
             io.emit('countdown', { message: 'Simulation starting now!' });
             this.emitNext();
-        }, 7000);
+        }, 1000);
     }
 
     stop() {
@@ -144,10 +165,15 @@ class TelemetryReplay {
             return;
         }
 
-        // Calculate delay until next emission
-        const timeDiff = (nextData.timestamp - currentData.timestamp);
-        const delayMs = timeDiff.valueOf();
-        console.log(nextData.altitude);
+        // Calculate the elapsed time since replay started
+        const elapsedTime = Date.now() - this.replayStartTime;
+        
+        // Calculate when the next data point should be emitted based on the original timestamps
+        const nextDataTime = nextData.timestamp - this.firstDataTimestamp;
+        
+        // Calculate delay accounting for processing time
+        const delayMs = Math.max(0, nextDataTime - elapsedTime);
+
         // Emit current data
         io.emit('gpsData', currentData);
         console.log(`Emitted data point ${this.currentIndex + 1}/${this.telemetryData.length}:`, 
@@ -159,10 +185,9 @@ class TelemetryReplay {
     }
 }
 
-// Create telemetry replay instance
+// Initialize server
 const telemetryReplay = new TelemetryReplay('flight-only.csv');
 
-// Initialize data loading and replay on server start
 (async () => {
     try {
         await telemetryReplay.loadData();
@@ -174,11 +199,8 @@ const telemetryReplay = new TelemetryReplay('flight-only.csv');
 
 io.on('connection', async (socket) => {
     console.log('Client connected');
-    
-    // Send flight stages configuration to client
     socket.emit('flightStages', FLIGHT_STAGES);
     
-    // Start replay automatically when client connects
     if (!telemetryReplay.isPlaying) {
         console.log('Starting replay for new client');
         telemetryReplay.start();

@@ -39,14 +39,14 @@ const csvFilePath = path.join(__dirname, csvFileName);
 // Update headers to include packet timestamp
 const headers = [
     'SystemTimestamp',
-    'PacketTimestamp',
+    'Timestamp',
     'Latitude',
     'Longitude',
     'Velocity',
     'Altitude',
-    'X_Acc(g)',
-    'Y_Acc(g)',
-    'Z_Acc(g)',
+    'xAcc',
+    'yAcc',
+    'zAcc',
     'Temperature'
 ];
 fs.writeFileSync(csvFilePath, headers.join(',') + '\n', 'utf8');

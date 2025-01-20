@@ -406,10 +406,12 @@ socket.on('gpsData', (data) => {
 
     // Update rocket position
     rocketPosition.addSample(currentTime, cartPos);
+    console.log(stageColor)
 
     // Handle path segment for current stage
     if (!pathSegments.has(stage)) {
       createPathSegment(stage, stageColor);
+      console.log(stageColor)
     }
 
     const pathSegment = pathSegments.get(stage);

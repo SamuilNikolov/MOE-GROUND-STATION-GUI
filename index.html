@@ -12,6 +12,8 @@
   <script src="scripts/bars_update.js"></script>
   <script src="scripts/accel_chart.js"></script>
   <script src="scripts/apogee_detection.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
 </head>
 <body>
   <!-- Left side: Map -->
@@ -64,6 +66,12 @@
     
     <!-- Button for enabling audio features (Beep only, no speech) -->
     <button id="enable-voice-btn">Enable Audio</button>
+    <hr>
+    <button id="maps-link-btn">Get Google Maps Link</button>
+<div style="text-align: center; margin: 10px;">
+  <div id="qrcode"></div>
+  <div id="qr-text" style="font-size: 12px; margin-top: 5px;">Scan for directions</div>
+</div>
   </div>
 
   <!-- External Scripts -->
@@ -73,6 +81,8 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
 
   <script>
+
+    
   /************************************************
    *        Configuration & Globals
    ************************************************/
@@ -154,6 +164,8 @@
 
     // Update map & path
     if(lat!==undefined && lon!==undefined){
+      currentLat = lat;
+    currentLon = lon;
       marker.setLatLng([lat, lon]);
       map.panTo([lat, lon]);
       recentCoordinates.push([lat, lon]);
@@ -189,7 +201,33 @@
       targetYaw   = yaw;
     }
   });
+//GOOGLE MAPS IMPLEMENTATION //
+let currentLat = 29.210815;  // Default starting latitude
+let currentLon = -81.022835; // Default starting longitude
+let qrCode = null;
 
+document.getElementById('maps-link-btn').addEventListener('click', () => {
+  const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${currentLat},${currentLon}`;
+  
+  // Clear existing QR code if any
+  document.getElementById('qrcode').innerHTML = '';
+  
+  // Create new QR code
+  qrCode = new QRCode(document.getElementById("qrcode"), {
+    text: mapsUrl,
+    width: 128,
+    height: 128,
+    colorDark: "#000000",
+    colorLight: "#ffffff",
+    correctLevel: QRCode.CorrectLevel.H
+  });
+
+  // Update QR text
+  document.getElementById('qr-text').style.display = 'block';
+  
+  // Open maps in new tab
+  window.open(mapsUrl, '_blank');
+});
 
   /************************************************
    *     Acceleration Chart
@@ -211,8 +249,8 @@
       scales:{
         x:{display:false},
         y:{
-          min:-10,
-          max:10,
+          min:-20,
+          max:20,
           title:{display:true, text:'Acceleration (g)'}
         }
       },
