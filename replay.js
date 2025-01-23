@@ -17,7 +17,7 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 app.get('/globe', (req, res) => {
-    res.sendFile(path.join(__dirname, 'cesium-replay.html'));
+    res.sendFile(path.join(__dirname, 'cesium-globe.html'));
 });
 app.get('/shared.css', (req, res) => {
     res.setHeader('Content-Type', 'text/css');
@@ -186,7 +186,7 @@ class TelemetryReplay {
 }
 
 // Initialize server
-const telemetryReplay = new TelemetryReplay('flight-only.csv');
+const telemetryReplay = new TelemetryReplay('flight_data_real.csv');
 
 (async () => {
     try {
