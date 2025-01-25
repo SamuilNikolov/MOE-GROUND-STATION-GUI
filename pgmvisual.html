@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>PGM Live Visualization</title>
+</head>
+<body>
+  <h1>PGM Live Visualization</h1>
+  <canvas id="pgmCanvas"></canvas>
+
+  <script>
+    let width = 0;
+    let height = 0;
+    let maxVal = 255;
+    let headerParsed = false;
+    let lineCount = 0;
+    let rowIndex = 0;
+
+    // We'll accumulate pixel data here before drawing rows
+    let pixelData;
+    let pixelBuffer = [];
+
+    const canvas = document.getElementById('pgmCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // We'll fetch a line from the server every 200ms
+    const intervalMs = 200;
+    let intervalId;
+
+    function fetchNextLine() {
+      fetch('/nextLine')
+        .then(res => res.text())
+        .then(line => {
+          if (line === 'EOF') {
+            console.log('Reached end of file.');
+            clearInterval(intervalId);
+            return;
+          }
+
+          // Trim & increment line counter
+          line = line.trim();
+          lineCount++;
+
+          // We parse the first 3 lines as the PGM header
+          if (!headerParsed) {
+            if (lineCount === 1) {
+              // Should be "P2"
+              console.log('Magic number:', line);
+            } else if (lineCount === 2) {
+              // Parse "width height"
+              const parts = line.split(/\s+/);
+              width = parseInt(parts[0], 10);
+              height = parseInt(parts[1], 10);
+              console.log('Width=', width, 'Height=', height);
+
+              // Setup canvas & image data
+              canvas.width = width;
+              canvas.height = height;
+              pixelData = ctx.createImageData(width, height);
+            } else if (lineCount === 3) {
+              // max gray (often 255)
+              maxVal = parseInt(line, 10);
+              console.log('Max gray=', maxVal);
+              headerParsed = true;
+              rowIndex = 0;
+            }
+          } else {
+            // Now we are reading pixel data lines
+            // Each line may have fewer or more pixel values
+            const nums = line.split(/\s+/).map(n => parseInt(n, 10))
+                              .filter(x => !isNaN(x));
+
+            // Append these pixels to the buffer
+            pixelBuffer = pixelBuffer.concat(nums);
+
+            // As long as we have at least one full row's worth of pixels
+            while (pixelBuffer.length >= width && rowIndex < height) {
+              // Extract one row (width pixels)
+              const rowPixels = pixelBuffer.slice(0, width);
+              // Remove those from the front of pixelBuffer
+              pixelBuffer = pixelBuffer.slice(width);
+
+              // Fill them into pixelData
+              for (let col = 0; col < width; col++) {
+                const gray = rowPixels[col];
+                const idx = (rowIndex * width + col) * 4;
+                pixelData.data[idx + 0] = gray; // R
+                pixelData.data[idx + 1] = gray; // G
+                pixelData.data[idx + 2] = gray; // B
+                pixelData.data[idx + 3] = 255;  // A
+              }
+
+              // Draw the updated row to the canvas
+              ctx.putImageData(pixelData, 0, 0);
+
+              // Move to next row
+              rowIndex++;
+              if (rowIndex >= height) {
+                console.log('All rows filled!');
+                clearInterval(intervalId);
+                return;
+              }
+            }
+          }
+        })
+        .catch(err => {
+          console.error('Error fetching line:', err);
+          clearInterval(intervalId);
+        });
+    }
+
+    // Start the interval that repeatedly fetches lines
+    intervalId = setInterval(fetchNextLine, intervalMs);
+  </script>
+
+</body>
+</html>
