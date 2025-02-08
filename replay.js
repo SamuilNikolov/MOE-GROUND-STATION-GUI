@@ -27,6 +27,9 @@ app.get('/dashboard', (req, res) => {
     res.sendFile(path.join(__dirname, 'dashboard.html'));
 });
 
+app.get('/test', (req, res) => {
+    res.sendFile(path.join(__dirname, 'cesium-vis.html'));
+});
 // Flight stages definition with millisecond timestamps
 const FLIGHT_STAGES = {
     PRELAUNCH: {
