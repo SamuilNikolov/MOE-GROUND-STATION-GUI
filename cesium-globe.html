@@ -295,7 +295,7 @@
         label: {
           text: new Cesium.CallbackProperty(() => {
 
-            return `SPECTRE -> ${rocketAltitude.toFixed(0)} m`;
+            return `L3 -> ${rocketAltitude*3.28084.toFixed(0)} ft`;
           }, false),
           font: '18px sans-serif',
           fillColor: Cesium.Color.BLACK,
@@ -365,8 +365,7 @@
         const { lat, lon, altitude } = data;
         if (lat != null && lon != null && altitude != null) {
           // store altitude
-            rocketAltitude = altitude;
-
+            rocketAltitude = altitude-32;
             // Fake GPGSV satellite data simulation
             const satellites = [
             //{ id: 1, lat: lat + 2, lon: lon + 2, alt: 10200000 },

@@ -144,7 +144,7 @@ class TelemetryReplay {
             console.log('Starting replay now...');
             io.emit('countdown', { message: 'Simulation starting now!' });
             this.emitNext();
-        }, 1000);
+        }, 4000);
     }
 
     stop() {
@@ -170,10 +170,10 @@ class TelemetryReplay {
 
         // Calculate the elapsed time since replay started
         const elapsedTime = Date.now() - this.replayStartTime;
-        
         // Calculate when the next data point should be emitted based on the original timestamps
         const nextDataTime = nextData.timestamp - this.firstDataTimestamp;
-        
+        console.log(nextDataTime)
+
         // Calculate delay accounting for processing time
         const delayMs = Math.max(0, nextDataTime - elapsedTime);
 
@@ -184,12 +184,13 @@ class TelemetryReplay {
 
         // Schedule next emission
         this.currentIndex++;
+        console.log(delayMs);
         setTimeout(() => this.emitNext(), delayMs);
     }
 }
 
 // Initialize server
-const telemetryReplay = new TelemetryReplay('flight_data_real.csv');
+const telemetryReplay = new TelemetryReplay('flight2-omni-range-synced.csv');
 
 (async () => {
     try {
