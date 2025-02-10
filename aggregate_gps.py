@@ -1,119 +1,67 @@
+#!/usr/bin/env python3
 import csv
-from datetime import datetime, timedelta
+import math
 
-# Filenames – adjust as needed
-flight_file = 'flight2-omni-range.csv'
-gps_file = 'gps.csv'
-output_file = 'flight2-omni-range-synced.csv'
+# Filenames (adjust as needed)
+initial_filename = 'henry-gc.csv'
+gps_filename = 'gps.csv'
+output_filename = 'henry-gc-gps.csv'
 
-# -----------------------------
-# STEP 1: Process the flight file
-# -----------------------------
+def load_csv_as_dicts(filename):
+    with open(filename, 'r', newline='') as f:
+        reader = csv.DictReader(f)
+        return list(reader)
 
-flight_rows = []
-with open(flight_file, newline='') as f:
-    reader = csv.DictReader(f)
-    flight_fieldnames = reader.fieldnames[:]  # keep header order
-    for row in reader:
-        # Convert the "Timestamp" field (ms since launch) to an integer.
+def main():
+    # Load the two CSV files
+    initial_rows = load_csv_as_dicts(initial_filename)
+    gps_rows = load_csv_as_dicts(gps_filename)
+
+    if not initial_rows:
+        print("Initial file is empty!")
+        return
+    if not gps_rows:
+        print("GPS file is empty!")
+        return
+
+    # Get the starting timestamp from the initial file (assumed to be in milliseconds)
+    try:
+        initial_start = int(initial_rows[0]['Timestamp'])
+    except (KeyError, ValueError):
+        print("Could not read the 'Timestamp' field from the initial file.")
+        return
+
+    # For each row in the initial file, calculate the elapsed time (in ms) and determine the gps row index.
+    for row in initial_rows:
         try:
-            row['Timestamp'] = int(row['Timestamp'])
-        except Exception as e:
-            raise ValueError(f"Error converting Timestamp to int in row {row}: {e}")
-        flight_rows.append(row)
+            ts = int(row['Timestamp'])
+        except ValueError:
+            print("Invalid Timestamp value:", row.get('Timestamp'))
+            continue
 
-if not flight_rows:
-    raise ValueError("No flight records found.")
+        elapsed_ms = ts - initial_start
+        # Since the GPS file updates about once per second, each second corresponds to one GPS row.
+        # Use integer division (floor) to pick the appropriate row.
+        gps_index = elapsed_ms // 1000
 
-# Parse the first flight row’s SystemTimestamp (an ISO8601 string)
-# Remove trailing 'Z' and add timezone info if needed.
-first_sys = flight_rows[0]['SystemTimestamp']
-try:
-    # This expects a format like "2025-02-08T16:40:28.259Z"
-    flight_first_time = datetime.fromisoformat(first_sys.replace("Z", "+00:00"))
-except Exception as e:
-    raise ValueError(f"Error parsing SystemTimestamp '{first_sys}': {e}")
+        # If we run past the end of the gps rows, use the last available gps reading.
+        if gps_index >= len(gps_rows):
+            gps_index = len(gps_rows) - 1
 
-# Compute the absolute launch time:
-#   launch_time = first_flight.SystemTimestamp – (first_flight.Timestamp in seconds)
-first_timestamp_ms = flight_rows[0]['Timestamp']
-launch_time = flight_first_time - timedelta(milliseconds=first_timestamp_ms)
-print(f"Computed launch time: {launch_time.isoformat()}")
+        gps_row = gps_rows[gps_index]
+        # Update the Latitude and Longitude fields with the tracker values from the gps file.
+        # (The gps file has columns "TRACKER Lat" and "TRACKER Lon".)
+        row['Latitude'] = gps_row.get('TRACKER Lat', row.get('Latitude'))
+        row['Longitude'] = gps_row.get('TRACKER Lon', row.get('Longitude'))
 
-# For each flight row, compute an absolute time using launch_time and the Timestamp.
-for row in flight_rows:
-    row_abs_time = launch_time + timedelta(milliseconds=row['Timestamp'])
-    row['abs_time'] = row_abs_time  # store for later comparison
+    # Write out the merged CSV
+    fieldnames = initial_rows[0].keys()  # keep the original order
+    with open(output_filename, 'w', newline='') as f_out:
+        writer = csv.DictWriter(f_out, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(initial_rows)
 
-# -----------------------------
-# STEP 2: Process the GPS file
-# -----------------------------
-gps_rows = []
-with open(gps_file, newline='') as f:
-    reader = csv.DictReader(f)
-    for row in reader:
-        # Parse the DATE field from gps file (format: m/d/YYYY)
-        try:
-            gps_date = datetime.strptime(row['DATE'], "%m/%d/%Y").date()
-        except Exception as e:
-            raise ValueError(f"Error parsing DATE '{row['DATE']}' in gps row {row}: {e}")
-            
-        # Parse the TIME field.
-        # We assume the GPS TIME is in "MM:SS.s" format.
-        try:
-            parts = row['TIME'].split(":")
-            if len(parts) != 2:
-                raise ValueError("Expected format MM:SS.s")
-            gps_minute = int(parts[0])
-            gps_second = float(parts[1])
-        except Exception as e:
-            raise ValueError(f"Error parsing TIME '{row['TIME']}' in gps row {row}: {e}")
-            
-        # Use the same hour as the flight_first_time and make the datetime timezone-aware.
-        gps_abs_time = datetime(
-            year=gps_date.year,
-            month=gps_date.month,
-            day=gps_date.day,
-            hour=flight_first_time.hour,  # using the flight record's hour
-            minute=gps_minute,
-            second=int(gps_second),
-            microsecond=int((gps_second - int(gps_second)) * 1_000_000),
-            tzinfo=flight_first_time.tzinfo  # attach the same tzinfo
-        )
-        row['abs_time'] = gps_abs_time
-        gps_rows.append(row)
+    print(f"Merged file written to {output_filename}")
 
-if not gps_rows:
-    raise ValueError("No GPS records found.")
-
-# Sort the GPS rows by absolute time.
-gps_rows.sort(key=lambda r: r['abs_time'])
-
-# -----------------------------
-# STEP 3: Sync – for each flight row, select the appropriate GPS fix.
-# -----------------------------
-for row in flight_rows:
-    flight_abs = row['abs_time']
-    current_gps = None
-    for gps_row in gps_rows:
-        if gps_row['abs_time'] <= flight_abs:
-            current_gps = gps_row
-        else:
-            break
-    if current_gps is None:
-        current_gps = gps_rows[0]
-    # Replace Latitude and Longitude in the flight row with the chosen GPS fix.
-    row['Latitude'] = current_gps['TRACKER Lat']
-    row['Longitude'] = current_gps['TRACKER Lon']
-
-# -----------------------------
-# STEP 4: Write the updated flight file
-# -----------------------------
-with open(output_file, 'w', newline='') as f:
-    writer = csv.DictWriter(f, fieldnames=flight_fieldnames)
-    writer.writeheader()
-    for row in flight_rows:
-        row.pop('abs_time', None)  # remove helper field
-        writer.writerow(row)
-
-print(f"Synced flight file written to {output_file}")
+if __name__ == '__main__':
+    main()

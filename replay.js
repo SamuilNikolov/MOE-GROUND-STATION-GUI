@@ -144,7 +144,7 @@ class TelemetryReplay {
             console.log('Starting replay now...');
             io.emit('countdown', { message: 'Simulation starting now!' });
             this.emitNext();
-        }, 4000);
+        }, 1000);
     }
 
     stop() {
@@ -190,7 +190,7 @@ class TelemetryReplay {
 }
 
 // Initialize server
-const telemetryReplay = new TelemetryReplay('flight2-omni-range-synced.csv');
+const telemetryReplay = new TelemetryReplay('henry-gc-l3-gps-altitude.csv');
 
 (async () => {
     try {

@@ -1,7 +1,7 @@
 import csv
 
 # Input and output file names
-INPUT_FILE = 'flight2-omni-range-synced-with-distance.csv'
+INPUT_FILE = 'henry-gc-l3-with-distance.csv'
 OUTPUT_FILE = 'flight2-ranges.csv'
 
 # Constants in the formula
@@ -15,6 +15,7 @@ def calculate_value(rssi, distance):
     """
     c = abs(rssi - F) / 20.0
     print(f"RSSI: {rssi}, distance: {distance}, c: {c}")
+    print(distance)
     return distance * (10 ** c)
 
 def process_csv(input_file, output_file):
@@ -24,14 +25,14 @@ def process_csv(input_file, output_file):
         
         # Read header and append new column header
         header = next(reader)
-        header.append("CalculatedValue")
+        header.append("Max Range (km)")
         writer.writerow(header)
         
         for row in reader:
             try:
                 # According to your header, distance is the 6th column and RSSI is the 11th column.
                 # Python indexing starts at 0, so:
-                distance = float(row[5])
+                distance = float(row[12])
                 rssi = float(row[10])
             except (IndexError, ValueError) as e:
                 # Skip rows that cannot be parsed properly

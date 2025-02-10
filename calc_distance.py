@@ -73,15 +73,16 @@ def process_csv(input_file_path, output_file_path, ground_lat, ground_lon, groun
             # Optionally, print the timestamp and distance
             timestamp = row.get('SystemTimestamp', 'N/A')
             print(f"Timestamp: {timestamp}, Distance: {distance:.2f} meters")
+            print(f"altitude: {alt}")
 
 if __name__ == "__main__":
     # Set the ground station coordinates (latitude, longitude, altitude in meters)
-    ground_latitude = 27.93231662095589
-    ground_longitude = -80.70990400503452
-    ground_altitude = 0  # Adjust if needed
+    ground_latitude = 27.93241
+    ground_longitude = -80.7095
+    ground_altitude = 10  # Adjust if needed
 
     # Define the paths for the input and output CSV files
-    input_csv_file_path = "flight2-omni-range-synced.csv"  # Replace with your input file path
-    output_csv_file_path = "flight2-omni-range-synced-with-distance.csv"  # The new file with distances
+    input_csv_file_path = "henry-gc-l3-gps-altitude.csv"  # Replace with your input file path
+    output_csv_file_path = "henry-gc-l3-with-distance.csv"  # The new file with distances
 
     process_csv(input_csv_file_path, output_csv_file_path, ground_latitude, ground_longitude, ground_altitude)
