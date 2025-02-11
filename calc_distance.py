@@ -82,7 +82,7 @@ if __name__ == "__main__":
     ground_altitude = 10  # Adjust if needed
 
     # Define the paths for the input and output CSV files
-    input_csv_file_path = "henry-gc-l3-gps-altitude.csv"  # Replace with your input file path
-    output_csv_file_path = "henry-gc-l3-with-distance.csv"  # The new file with distances
+    input_csv_file_path = "henry-clean-altitude-gps.csv"  # Replace with your input file path
+    output_csv_file_path = "henry-final-example.csv"  # The new file with distances
 
     process_csv(input_csv_file_path, output_csv_file_path, ground_latitude, ground_longitude, ground_altitude)

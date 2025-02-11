@@ -3,9 +3,9 @@ import csv
 import math
 
 # Filenames (adjust as needed)
-initial_filename = 'henry-gc.csv'
+initial_filename = 'henry-clean-altitude.csv'
 gps_filename = 'gps.csv'
-output_filename = 'henry-gc-gps.csv'
+output_filename = 'henry-clean-altitude-gps.csv'
 
 def load_csv_as_dicts(filename):
     with open(filename, 'r', newline='') as f:

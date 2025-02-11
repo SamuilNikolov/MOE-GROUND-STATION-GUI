@@ -1,11 +1,11 @@
 import csv
 
 # Input and output file names
-INPUT_FILE = 'henry-gc-l3-with-distance.csv'
-OUTPUT_FILE = 'flight2-ranges.csv'
+INPUT_FILE = 'henry-final-example.csv'
+OUTPUT_FILE = 'henry-ranges-example.csv'
 
 # Constants in the formula
-F = -126
+F = -120
 
 def calculate_value(rssi, distance):
     """

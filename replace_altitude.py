@@ -1,7 +1,7 @@
 import pandas as pd
 
 # 1. Read in the CSV files.
-df1 = pd.read_csv("merged.csv")   # Contains: SystemTimestamp (ISO datetime), Timestamp, Latitude, ..., Altitude, etc.
+df1 = pd.read_csv("henry-clean.csv")   # Contains: SystemTimestamp (ISO datetime), Timestamp, Latitude, ..., Altitude, etc.
 df2 = pd.read_csv("l3-flight-sd.csv")       # Contains: Timestamp, Latitude, Longitude, Velocity, Altitude, AltitudeGPS, AccelX, AccelY, AccelZ, Temperature
 
 # 2. Convert the merge key 'Timestamp' in both DataFrames to numeric (integers).
@@ -32,4 +32,4 @@ merged['Altitude'] = merged['Altitude_new']
 merged.drop(columns=['Altitude_new'], inplace=True)
 
 # 7. Write out the updated file.
-merged.to_csv("henry-gc-l3-gps-altitude.csv", index=False)
+merged.to_csv("henry-clean-altitude.csv", index=False)
